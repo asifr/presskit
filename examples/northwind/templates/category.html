@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Category - {{ CategoryName }}{% endblock %}
+{% block content %}
+<h1>Category / {{ CategoryName }}</h1>
+<p>
+    {{ Description }}
+</p>
+
+{% if products|length == 0 %}
+<p class="text-muted">No products available in this category.</p>
+{% endif %}
+
+{% if products|length > 0 %}
+<p class="text-muted">Total Products: {{ products|length }}</p>
+{% endif %}
+
+<ul>
+    {% for product in products %}
+    <li>
+        <a href="/products/{{ product.ProductID }}.html">{{ product.ProductName }}</a>
+        {% if product.Discontinued == "1" %}
+        <span class="text-danger">Discontinued</span>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+<p>
+    <a href="/categories.html">Back to Categories</a>
+</p>
+{% endblock %}

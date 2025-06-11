@@ -1,0 +1,77 @@
+{
+    "title": "Northwind Traders",
+    "description": "A sample application showcasing the Northwind database with a modern web interface.",
+    "author": "Northwind Team",
+    "url": "http://localhost:8000",
+    "version": "1.0.0",
+    "language": "en-US",
+    "site_dir": ".",
+    "content_dir": "content",
+    "templates_dir": "templates",
+    "output_dir": "public",
+    "cache_dir": ".cache",
+    "default_template": "page",
+    "markdown_extension": "md",
+    "workers": 8,
+    "server_host": "0.0.0.0",
+    "server_port": 8000,
+    "sources": {
+        "northwinds": {
+            "type": "sqlite",
+            "path": "./data/northwind.db"
+        }
+    },
+    "queries": [
+        {
+            "name": "products",
+            "source": "northwinds",
+            "query": "SELECT * FROM products"
+        },
+        {
+            "name": "customers",
+            "source": "northwinds",
+            "query": "SELECT * FROM customers"
+        },
+        {
+            "name": "orders",
+            "source": "northwinds",
+            "query": "SELECT * FROM orders"
+        },
+        {
+            "name": "categories",
+            "source": "northwinds",
+            "query": "SELECT CategoryID, CategoryName, Description FROM Categories"
+        },
+        {
+            "name": "categories.products",
+            "source": "northwinds",
+            "query": "SELECT ProductID, ProductName, CategoryID FROM Products WHERE Products.CategoryID = {{ CategoryID }}"
+        },
+        {
+            "name": "allproducts",
+            "source": "northwinds",
+            "query": "SELECT ProductID, ProductName, CategoryID, (SELECT CategoryName FROM Categories WHERE Categories.CategoryID = Products.CategoryID) AS CategoryName FROM Products",
+            "generator": true,
+            "template": "product",
+            "output_path": "products/#{ProductID}"
+        },
+        {
+            "name": "allproducts.product",
+            "source": "northwinds",
+            "query": "SELECT * FROM Products WHERE ProductID = {{ProductID}}"
+        },
+        {
+            "name": "allcategories",
+            "source": "northwinds",
+            "generator": true,
+            "template": "category",
+            "output_path": "categories/#{CategoryID}",
+            "query": "SELECT CategoryID, CategoryName, Description FROM Categories"
+        },
+        {
+            "name": "allcategories.products",
+            "source": "northwinds",
+            "query": "SELECT * FROM Products WHERE CategoryID = {{CategoryID}}"
+        }
+    ]
+}

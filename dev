@@ -1,0 +1,158 @@
+#!/bin/bash
+# Usage:
+#   chmod +x dev
+#   ./dev [COMMAND]
+
+set -e
+
+
+ERROR='\033[0;31m'
+SUCCESS='\033[0;32m'
+CODE='\033[0;36m'
+NC='\033[0m' # No Color
+
+cmd_helps=()
+
+defhelp() {
+  local command="${1?}"
+  local text="${2?}"
+  local help_str
+  help_str="$(printf '   %-24s %s' "$command" "$text")"
+  cmd_helps+=("$help_str")
+}
+
+# Print out help information
+cmd_help() {
+  echo "Script for performing dev tasks."
+  echo
+  echo "Usage: ./dev [COMMAND]"
+  echo "Replace [COMMAND] with a word from the list below."
+  echo
+  echo "COMMAND list:"
+  for str in "${cmd_helps[@]}"; do
+    echo -e "$str"
+  done
+}
+defhelp help 'View all help.'
+
+# ------------------------------------------------------------------------------
+# Repo
+# ------------------------------------------------------------------------------
+
+cmd_clean_env() {
+    echo "Cleaning up Python virtual environment..."
+    rm -rf ./.venv
+}
+defhelp clean_env 'Clean up Python virtual environment.'
+
+cmd_clean_build() {
+    echo "Remove build artifacts..."
+    rm -fr build/
+    rm -fr dist/
+    rm -fr .eggs/
+    find . -name '*.egg-info' -exec rm -fr {} +
+    find . -name '*.egg' -exec rm -f {} +
+}
+defhelp clean_build 'Remove build artifacts.'
+
+cmd_clean_pyc() {
+    echo "Remove Python file artifacts..."
+	find . -name '*.pyc' -exec rm -f {} +
+	find . -name '*.pyo' -exec rm -f {} +
+	find . -name '*~' -exec rm -f {} +
+	find . -name '__pycache__' -exec rm -fr {} +
+}
+defhelp clean_pyc 'Remove Python file artifacts.'
+
+cmd_clean_test() {
+    echo "Remove test artifacts..."
+	rm -fr .tox/
+	rm -f .coverage
+	rm -fr htmlcov/
+	rm -fr .pytest_cache
+}
+defhelp clean_test 'Remove test artifacts.'
+
+cmd_clean() {
+    echo "Cleaning up..."
+    cmd_clean_env
+    cmd_clean_build
+    cmd_clean_pyc
+    cmd_clean_test
+}
+defhelp clean 'Clean up.'
+
+cmd_test() {
+    echo "Running tests..."
+    source .venv/bin/activate; pytest tests/ -v
+}
+defhelp test 'Run tests.'
+
+cmd_cov() {
+    echo "Running tests with coverage..."
+    source .venv/bin/activate; pytest tests/ --cov=presskit --cov-report=html --cov-report=term
+}
+defhelp cov 'Run tests with coverage report.'
+
+cmd_setup_venv() {
+    echo "Setting up Python virtual environment..."
+    test -d .venv || uv venv --python=3.11 .venv
+}
+defhelp setup_venv 'Set up Python virtual environment.'
+
+cmd_setup() {
+    echo "Installing package..."
+	cmd_setup_venv
+	source .venv/bin/activate; uv pip install -e .[dev]
+}
+defhelp setup 'Set up Python virtual environment.'
+
+cmd_test() {
+    echo "Running tests..."
+    source .venv/bin/activate; pytest tests/ -v
+}
+
+cmd_cov() {
+    echo "Running tests with coverage..."
+    source .venv/bin/activate; python -m pytest tests/ --cov=presskit --cov-report=html --cov-report=term
+}
+defhelp cov 'Run tests with coverage.'
+
+cmd_build() {
+    echo "Building package..."
+	rm -rf ./dist
+	source .venv/bin/activate; uv pip install build
+	source .venv/bin/activate; python -m build --outdir ./dist
+}
+defhelp build 'Build distribution.'
+
+cmd_publish() {
+	source .venv/bin/activate; uv pip install twine
+	source .venv/bin/activate; python -m twine upload --verbose --config-file ~/.pypirc --repository pypi dist/*
+}
+defhelp publish 'Publish distribution.'
+
+# -----------------------------------------------------------------------------
+# Core script logic
+# -----------------------------------------------------------------------------
+
+silent() {
+    "$@" > /dev/null 2>&1
+}
+
+# If no command given
+if [ $# -eq 0 ]; then
+    echo -e "${ERROR}ERROR: This script requires a command!${NC}"
+    cmd_help
+    exit 1
+fi
+cmd="$1"
+shift
+if silent type "cmd_$cmd"; then
+    "cmd_$cmd" "$@"
+    exit $?
+else
+    echo -e "${ERROR}ERROR: Unknown command!${NC}"
+    echo "Type './dev help' for available commands."
+    exit 1
+fi

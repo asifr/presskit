@@ -1,0 +1,54 @@
+[project]
+name = "presskit"
+authors = [{ name = "Asif Rahman", email = "asiftr@gmail.com" }]
+description = "Static site generator"
+readme = "README.md"
+dynamic = ["version"]
+requires-python = ">=3.11"
+keywords = ["llm"]
+license = { text = "Apache License 2.0" }
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Environment :: Web Environment",
+    "Topic :: Internet :: WWW/HTTP",
+]
+dependencies = [
+    'importlib-metadata; python_version<"3.10"',
+    "Jinja2==3.1.6",
+    "markdown==3.8",
+    "PyYAML==6.0.2",
+    "MarkupSafe==3.0.2",
+    "pydantic==2.11.4",
+    "Pygments==2.19.1",
+    "pymdown-extensions==10.15",
+]
+
+# Dev dependencies
+[project.optional-dependencies]
+dev = ["ruff", "ipykernel", "pytest", "pytest-cov", "nbformat"]
+
+# Read the version from the package
+[tool.setuptools.dynamic]
+version = { attr = "presskit.__version__" }
+
+[tool.setuptools]
+packages = ["presskit"]
+
+# CLI entry point
+[project.scripts]
+presskit = "presskit.__main__:main"
+
+# Include the JSON files in the package var directory
+[tool.setuptools.package-data]
+presskit = ["var/**/*"]
+
+# Linting configuration
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+# Use the setuptools build system
+[build-system]
+requires = ["setuptools", "wheel", "pip"]
+build-backend = "setuptools.build_meta"
