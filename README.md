@@ -454,3 +454,7 @@ presskit clean
 Presskit includes useful Jinja2 filters:
 
 - `date_format(format)` - Format dates (e.g., `{{ date | date_format('%B %d, %Y') }}`)
+
+## Changes
+
+- 0.0.1 - Initial version with site configuration, markdown processing, and Jinja templating
