@@ -15,7 +15,7 @@ A powerful static site generator that combines Markdown content with Jinja2 temp
 pip install presskit
 ```
 
-or you can use Astral's uv to install presskit as a tool:
+Or you can use [Astral's uv](https://docs.astral.sh/uv/) Python package manager to install Presskit as a self-contained tool so it can be run from the command line without needing to activate a virtual environment:
 
 ```bash
 uv tool install presskit
