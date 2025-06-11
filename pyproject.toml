@@ -5,7 +5,7 @@ description = "Static site generator"
 readme = "README.md"
 dynamic = ["version"]
 requires-python = ">=3.11"
-keywords = ["llm"]
+keywords = ["static site generator", "static sites", "ssg"]
 license = "MIT"
 license-files = ["LICEN[CS]E.*"]
 classifiers = [
