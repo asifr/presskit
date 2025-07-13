@@ -42,7 +42,10 @@ duckdb = ["duckdb>=1.3.0"]
 version = { attr = "presskit.__version__" }
 
 [tool.setuptools]
-packages = ["presskit"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["presskit*"]
 
 # CLI entry point
 [project.scripts]
