@@ -21,14 +21,12 @@ from presskit.press import (
     process_sql_template,
     process_markdown,
     process_template,
-    execute_query,
     get_site_paths,
     ensure_directories,
     check_query_cache,
-    ConfigError,
-    QueryError,
 )
-from presskit.models import (
+from presskit.config.loader import ConfigError
+from presskit.config.models import (
     SiteConfig,
     SiteContext,
 )
@@ -100,7 +98,8 @@ class TestConfigFunctions:
         
         config = load_site_config(config_file)
         assert config.content_dir.is_absolute()
-        assert config.sources["db"].path.is_absolute()
+        resolved_path = config.sources["db"].get_resolved_path(config.site_dir)
+        assert resolved_path is not None and resolved_path.is_absolute()
 
 
 class TestContextBuilders:
@@ -435,66 +434,8 @@ class TestFileOperations:
         assert check_query_cache(config) is False
 
 
-class TestQueryExecution:
-    """Test query execution functions."""
-
-    @patch("presskit.press.sqlite3.connect")
-    def test_execute_query_simple(self, mock_connect: MagicMock) -> None:
-        """Test executing simple query without variables."""
-        # Setup mock
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [
-            {"id": 1, "title": "Post 1"},
-            {"id": 2, "title": "Post 2"}
-        ]
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_conn.__enter__.return_value = mock_conn
-        mock_conn.__exit__.return_value = None
-        mock_connect.return_value = mock_conn
-        
-        db_path = Path("/fake/db.sqlite")
-        query = "SELECT * FROM posts"
-        
-        results = execute_query(db_path, query)
-        
-        assert len(results) == 2
-        assert results[0]["title"] == "Post 1"
-        mock_cursor.execute.assert_called_once_with(query)
-    
-    @patch("presskit.press.sqlite3.connect")
-    def test_execute_query_with_variables(self, mock_connect: MagicMock) -> None:
-        """Test executing query with template variables."""
-        # Setup mock
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [{"id": 1, "title": "Post 1"}]
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_conn.__enter__.return_value = mock_conn
-        mock_conn.__exit__.return_value = None
-        mock_connect.return_value = mock_conn
-        
-        db_path = Path("/fake/db.sqlite")
-        query = "SELECT * FROM posts WHERE author_id = {{ author_id }}"
-        variables = {"author_id": 123}
-        
-        results = execute_query(db_path, query, variables)
-        
-        assert len(results) == 1
-        expected_query = "SELECT * FROM posts WHERE author_id = 123"
-        mock_cursor.execute.assert_called_once_with(expected_query)
-    
-    @patch("presskit.press.sqlite3.connect")
-    def test_execute_query_error(self, mock_connect: MagicMock) -> None:
-        """Test query execution error handling."""
-        import sqlite3
-        mock_connect.side_effect = sqlite3.Error("Database error")
-        
-        db_path = Path("/fake/db.sqlite")
-        query = "SELECT * FROM posts"
-        
-        with pytest.raises(QueryError, match="Failed to connect to database"):
-            execute_query(db_path, query)
+# Query execution tests have been moved to source-specific test files
+# since execute_query is now part of the individual data source implementations
 
 
 class TestDateFilter:
