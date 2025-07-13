@@ -10,10 +10,12 @@ from presskit.models import (
     PageContext,
     DataContext,
     TemplateContext,
-    SourceDefinition,
-    QueryDefinition,
     QueryCache,
     get_num_workers,
+)
+from presskit.config.models import (
+    SourceDefinition,
+    QueryDefinition,
 )
 
 
@@ -34,19 +36,19 @@ class TestSourceDefinition:
         """Test creating SQLite source definition."""
         source = SourceDefinition(
             type="sqlite",
-            path=Path("data/test.db")
+            path="data/test.db"
         )
         assert source.type == "sqlite"
-        assert source.path == Path("data/test.db")
+        assert source.path == "data/test.db"
     
     def test_json_source(self) -> None:
         """Test creating JSON source definition."""
         source = SourceDefinition(
             type="json",
-            path=Path("data/config.json")
+            path="data/config.json"
         )
         assert source.type == "json"
-        assert source.path == Path("data/config.json")
+        assert source.path == "data/config.json"
 
 
 class TestQueryDefinition:
@@ -116,14 +118,17 @@ class TestSiteConfig:
             server_host="localhost",
             server_port=3000,
             sources={
-                "db": SourceDefinition(type="sqlite", path=Path("data/blog.db"))
+                "db": {
+                    "type": "sqlite",
+                    "path": "data/blog.db"
+                }
             },
             queries=[
-                QueryDefinition(
-                    name="posts",
-                    source="db",
-                    query="SELECT * FROM posts"
-                )
+                {
+                    "name": "posts",
+                    "source": "db",
+                    "query": "SELECT * FROM posts"
+                }
             ],
             variables={"theme": "dark"},
             default_source="db"
@@ -145,10 +150,10 @@ class TestSiteConfig:
             output_dir=Path("public"),
             cache_dir=Path(".cache"),
             sources={
-                "db": SourceDefinition(
-                    type="sqlite",
-                    path=Path("data/test.db")
-                )
+                "db": {
+                    "type": "sqlite",
+                    "path": "data/test.db"
+                }
             }
         )
         
@@ -161,7 +166,14 @@ class TestSiteConfig:
         assert config.templates_dir.is_absolute()
         assert config.output_dir.is_absolute()
         assert config.cache_dir.is_absolute()
-        assert config.sources["db"].path.is_absolute()
+        # Check that source definition has resolved path when accessed through EnvironmentLoader
+        source_def = config.sources["db"]
+        if hasattr(source_def, 'get_resolved_path'):
+            resolved_path = source_def.get_resolved_path(config.site_dir)
+            assert resolved_path is not None and resolved_path.is_absolute()
+        else:
+            # For dict sources, check the path value directly after resolution
+            assert isinstance(source_def.path, Path) and source_def.path.is_absolute()
 
 
 class TestContextModels:

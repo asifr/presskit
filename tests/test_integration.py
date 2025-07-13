@@ -11,8 +11,8 @@ from presskit.press import (
     cmd_build,
     cmd_clean,
     build_file,
-    process_queries,
 )
+from presskit.core.query import QueryProcessor
 
 
 class TestFullWorkflow:
@@ -436,6 +436,12 @@ Test content"""
         
         config = load_site_config(config_file)
         
-        # Should handle error gracefully
-        result = process_queries(config)
-        assert result is False  # Should fail due to invalid SQL
+        # Should handle error gracefully (log error but continue processing)
+        result = cmd_data(config)
+        assert result is True  # Should succeed overall even if individual queries fail
+        
+        # Verify that the invalid query is not in the cache
+        cache_file = config.cache_dir / "queries.json"
+        assert cache_file.exists()
+        cache_data = json.loads(cache_file.read_text())
+        assert "bad_query" not in cache_data["queries"]  # Invalid query should not be cached

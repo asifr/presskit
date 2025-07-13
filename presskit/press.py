@@ -1,16 +1,12 @@
 """
 presskit - A static site generator for creating websites from markdown files and Jinja templates.
-
-Changes
--------
-0.0.1 - Initial version with site configuration, markdown processing, and Jinja templating.
 """
 
 import re
 import sys
 import json
 import yaml
-import sqlite3
+import asyncio
 import argparse
 import markdown
 import datetime
@@ -25,20 +21,19 @@ from typing import Dict, List, Optional, Any, TypeVar
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from presskit.utils import print_error, print_warning, print_success, print_info, print_progress
-from presskit.models import (
+from presskit.config.models import (
     SiteConfig,
     SiteContext,
     BuildContext,
     PageContext,
     DataContext,
-    SourceDefinition,
-    QueryDefinition,
     TemplateContext,
-    QueryCache,
 )
+from presskit.core.query import QueryProcessor
+from presskit.sources.registry import get_registry
+from presskit.config.loader import EnvironmentLoader, ConfigError
 
 T = TypeVar("T")  # Type variables for generic functions
-
 
 
 # Context Builder Functions
@@ -132,7 +127,7 @@ def find_config_file(config_arg: Optional[str] = None) -> Path:
 
 def load_site_config(config_path: Path) -> SiteConfig:
     """
-    Load and validate site configuration from presskit.json.
+    Load and validate site configuration from presskit.json with environment variable support.
 
     Args:
         config_path: Path to the configuration file
@@ -147,7 +142,10 @@ def load_site_config(config_path: Path) -> SiteConfig:
         with open(config_path, "r") as f:
             data = json.load(f)
 
-        config = SiteConfig(**data)
+        # Process environment variables
+        processed_data = EnvironmentLoader.process_config(data)
+
+        config = SiteConfig(**processed_data)
         config.resolve_paths(config_path)
         return config
 
@@ -155,18 +153,8 @@ def load_site_config(config_path: Path) -> SiteConfig:
         raise ConfigError(f"Error loading configuration file {config_path}: {e}")
     except ValueError as e:
         raise ConfigError(f"Invalid configuration in {config_path}: {e}")
-
-
-class ConfigError(Exception):
-    """Exception raised for configuration errors."""
-
-    pass
-
-
-class QueryError(Exception):
-    """Exception raised for errors in query execution."""
-
-    pass
+    except Exception as e:
+        raise ConfigError(f"Error processing configuration: {e}")
 
 
 class BuildError(Exception):
@@ -324,9 +312,9 @@ def check_query_cache(config: SiteConfig) -> bool:
     return True
 
 
-def process_queries(config: SiteConfig) -> bool:
+async def process_queries(config: SiteConfig) -> bool:
     """
-    Process all queries in presskit.json and cache results.
+    Process all queries in presskit.json and cache results using new async system.
 
     Args:
         config: Site configuration
@@ -339,36 +327,9 @@ def process_queries(config: SiteConfig) -> bool:
     try:
         query_cache_file = get_query_cache_file(config)
 
-        # Create initial cache file structure with metadata
-        cache_data = {
-            "metadata": {
-                "generated": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "sources": {
-                    name: str(resolve_source_path(name, config.sources, config.site_dir)) for name in config.sources
-                },
-            },
-            "queries": {},
-            "generators": {},
-            "data": {},  # Section for direct JSON data
-        }
-        cache_data = QueryCache(**cache_data)
-
-        # Process JSON data sources first
-        for source_name, source_config in config.sources.items():
-            if source_config.type == "json":
-                print(f"Loading JSON source: {source_name}")
-                json_data = load_data_source(source_name, config.sources, config.site_dir)
-                if json_data:
-                    # Store the JSON data in the cache
-                    cache_data.data[source_name] = json_data
-                    print_success(f"Loaded JSON source: {source_name}")
-
-        # Group queries by parent/child relationship
-        parent_queries = [q for q in config.queries if "." not in q.name]
-
-        # Process each parent query
-        for parent_query in parent_queries:
-            process_parent_query(parent_query, config, cache_data)
+        # Use new async query processor
+        processor = QueryProcessor()
+        cache_data = await processor.process_all_queries(config)
 
         # Save cache to file
         if save_json(cache_data, query_cache_file):
@@ -379,157 +340,15 @@ def process_queries(config: SiteConfig) -> bool:
             print_error(f"Failed to save cache to {query_cache_file}")
             return False
 
-    except ConfigError as e:
-        print_error(f"Configuration error: {e}")
-        return False
     except Exception as e:
-        print_error(f"Unexpected error processing queries: {e}")
+        print_error(f"Error processing queries: {e}")
         return False
 
 
-def process_parent_query(parent_query: QueryDefinition, config: SiteConfig, cache_data: QueryCache) -> None:
-    """
-    Process a parent query and its children.
-
-    Args:
-        parent_query: Parent query definition
-        config: Site configuration
-        cache_data: Cache data to update with query results
-    """
-    parent_name = parent_query.name
-    print(f"Executing parent query: {parent_name}")
-
-    # Get source for this query
-    source_name = parent_query.source or config.default_source
-    if not source_name:
-        print_error(f"No source specified for query: {parent_name}")
-        return
-
-    # Get source data
-    source = load_data_source(source_name, config.sources, config.site_dir)
-    if not source:
-        return
-
-    # Check source type
-    source_type = config.sources[source_name].type
-
-    # Execute parent query based on source type
-    parent_results: List[Dict[str, Any]] = []
-    if source_type == "sqlite":
-        # Initialize variables for query
-        query_vars: Dict[str, Any] = parent_query.variables or {}
-
-        # Add global variables if available
-        if config.variables:
-            query_vars.update(config.variables)
-
-        # Execute the query with variables
-        parent_results = execute_query(source, parent_query.query, query_vars)
-    elif source_type == "json":
-        # For JSON sources, we don't execute queries, but queries can be paths to extract data
-        print_warning(f"JSON queries not fully implemented for query: {parent_name}")
-        # For now, just return the entire JSON data
-        parent_results = source
-    else:
-        print_error(f"Unsupported source type: {source_type}")
-        return
-
-    # Find all child queries for this parent
-    child_queries = [q for q in config.queries if q.name.startswith(f"{parent_name}.")]
-
-    if child_queries and source_type == "sqlite":
-        child_names = [q.name.split(".", 1)[1] for q in child_queries]
-        print(f"  Found child queries: {', '.join(child_names)}")
-
-        # For each parent result, process its child queries
-        for parent_row in parent_results:
-            for child_query in child_queries:
-                child_name = child_query.name.split(".", 1)[1]
-                child_sql = child_query.query
-
-                # Create variables dictionary from parent row
-                variables = dict(parent_row)
-
-                # Add global variables if available
-                if config.variables:
-                    variables.update(config.variables)
-
-                # Add child query specific variables if available
-                if child_query.variables:
-                    variables.update(child_query.variables)
-
-                # Execute child query with variables
-                try:
-                    child_results = execute_query(source, child_sql, variables)
-                    # Add child results to parent row
-                    parent_row[child_name] = child_results
-                except QueryError as e:
-                    print_error(f"Error executing child query {child_name}: {e}")
-                    parent_row[child_name] = []
-
-    # Check if this is a generator query
-    is_generator = parent_query.generator
-
-    if is_generator:
-        # Store in generators section
-        cache_data.generators[parent_name] = parent_results
-    else:
-        # Store in regular queries section - directly without the 'results' key
-        cache_data.queries[parent_name] = parent_results
+# Legacy query processing functions removed - using new async QueryProcessor
 
 
-def resolve_source_path(source_name: str, sources: Dict[str, SourceDefinition], site_dir: Path) -> Optional[Path]:
-    """
-    Resolve the path for a named source.
-
-    Args:
-        source_name: Name of the source to resolve
-        sources: Dictionary of source definitions
-        site_dir: Base site directory
-
-    Returns:
-        Resolved Path object or None if source not found
-    """
-    if source_name not in sources:
-        print_error(f"Source not found: {source_name}")
-        return None
-
-    source_config = sources[source_name]
-    return source_config.path  # Path is already resolved by resolve_paths()
-
-
-def load_data_source(source_name: str, sources: Dict[str, SourceDefinition], site_dir: Path) -> Any:
-    """
-    Load a data source by name.
-
-    Args:
-        source_name: Name of the source to load
-        sources: Dictionary of source definitions
-        site_dir: Base site directory (kept for compatibility but paths are pre-resolved)
-
-    Returns:
-        Loaded source data or None if source not found or invalid
-    """
-    source_path = resolve_source_path(source_name, sources, site_dir)
-    if not source_path:
-        return None
-
-    if not source_path.exists():
-        print_error(f"Source file not found: {source_path}")
-        return None
-
-    source_config = sources[source_name]
-    source_type = source_config.type
-
-    if source_type == "sqlite":
-        # Return the path for SQLite databases
-        return source_path
-    elif source_type == "json":
-        # Load and return the JSON data
-        return load_json(source_path)
-    else:
-        print_error(f"Unsupported source type: {source_type}")
-        return None
+# Legacy data source loading functions removed - using new modular source system
 
 
 def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: SiteConfig) -> bool:
@@ -564,8 +383,10 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
                 page=build_page_context(file_path, config, front_matter),
                 data=build_data_context(query_cache, {}),
             )
-            page_query_results = process_markdown_queries(
-                md_queries, temp_context.to_template_vars(), config.sources, config.site_dir
+            # Use async query processor for markdown queries
+            processor = QueryProcessor()
+            page_query_results = asyncio.run(
+                processor.process_markdown_queries(md_queries, temp_context.to_template_vars(), config)
             )
 
         # Build structured context
@@ -890,65 +711,6 @@ def replace_path_placeholders(path_template: str, row: Dict[str, Any]) -> str:
     return result
 
 
-def get_db_connection(db_path: Path) -> sqlite3.Connection:
-    """
-    Get a properly configured SQLite connection.
-
-    Args:
-        db_path: Path to the SQLite database file
-
-    Returns:
-        Configured SQLite connection
-
-    Raises:
-        QueryError: If connection fails
-    """
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-    except sqlite3.Error as e:
-        raise QueryError(f"Failed to connect to database: {e}")
-
-
-def execute_query(db_path: Path, query: str, variables: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """
-    Execute a SQL query and return results as a list of dictionaries.
-
-    Args:
-        db_path: Path to the SQLite database
-        query: SQL query to execute
-        variables: Variables to substitute in the query
-
-    Returns:
-        List of dictionaries containing query results
-
-    Raises:
-        QueryError: If query execution fails
-    """
-    try:
-        with get_db_connection(db_path) as conn:
-            cursor = conn.cursor()
-
-            if variables:
-                # Process the SQL query as a Jinja template
-                processed_query = process_sql_template(query, variables)
-                cursor.execute(processed_query)
-            else:
-                cursor.execute(query)
-
-            # Convert to list of dictionaries
-            results = [dict(row) for row in cursor.fetchall()]
-            return results
-    except (sqlite3.Error, QueryError) as e:
-        error_msg = f"Database error: {e}"
-        print_error(error_msg)
-        print_error(f"In query: {query}")
-        if variables:
-            print_error(f"With variables: {variables}")
-        raise QueryError(error_msg)
-
-
 def data_status(config: SiteConfig) -> None:
     """
     Display query cache status.
@@ -1120,57 +882,7 @@ def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Pa
         raise TemplateRenderingError(f"Error processing markdown template: {e}")
 
 
-def process_markdown_queries(
-    queries: Dict[str, Any], variables: Dict[str, Any], sources: Dict[str, SourceDefinition], site_dir: Path
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Process queries defined in a markdown file.
-
-    Args:
-        queries: Query definitions from the markdown file
-        variables: Variables to substitute in the queries
-        sources: Source definitions
-        site_dir: Base site directory (kept for compatibility, paths are pre-resolved)
-
-    Returns:
-        Dictionary of query results
-    """
-    results: Dict[str, List[Dict[str, Any]]] = {}
-
-    for query_name, query_def in queries.items():
-        print(f"Executing markdown query: {query_name}")
-
-        # Get source for this query
-        source_name = query_def.get("source", "")
-        if not source_name:
-            print_error(f"No source specified for query: {query_name}")
-            continue
-
-        # Get source data
-        source = load_data_source(source_name, sources, site_dir)
-        if not source:
-            continue
-
-        # Get source type from configuration
-        source_type = sources[source_name].type
-
-        if source_type == "sqlite":
-            # Execute the SQL query
-            sql_query = query_def.get("query", "")
-            try:
-                query_results = execute_query(source, sql_query, variables)
-                results[query_name] = query_results
-            except QueryError as e:
-                print_error(f"Error executing query {query_name}: {e}")
-                results[query_name] = []
-        elif source_type == "json":
-            # For JSON sources, queries can be paths to extract data
-            print_warning(f"JSON queries not fully implemented for query: {query_name}")
-            results[query_name] = source
-        else:
-            print_error(f"Unsupported source type: {source_type}")
-
-    return results
+# Legacy markdown query processing removed - using new async QueryProcessor.process_markdown_queries
 
 
 def process_template(template_name: str, variables: Dict[str, Any], templates_dir: Path) -> str:
@@ -1222,7 +934,7 @@ def process_template(template_name: str, variables: Dict[str, Any], templates_di
 
 def cmd_data(config: SiteConfig) -> bool:
     """
-    Execute all SQL queries and cache results.
+    Execute all queries and cache results using new async system.
 
     Args:
         config: Site configuration
@@ -1232,7 +944,7 @@ def cmd_data(config: SiteConfig) -> bool:
     """
     print("Refreshing query cache...")
     ensure_directories(config)
-    return process_queries(config)
+    return asyncio.run(process_queries(config))
 
 
 def cmd_data_status(config: SiteConfig) -> bool:
@@ -1432,6 +1144,54 @@ def cmd_clean(config: SiteConfig) -> bool:
     return True
 
 
+def cmd_sources() -> bool:
+    """
+    List available data sources and their status.
+
+    Returns:
+        True if successful, False otherwise
+    """
+    print("Available data sources:")
+    print()
+
+    try:
+        registry = get_registry()
+        available_sources = registry.list_available_sources()
+        unavailable_sources = registry.list_unavailable_sources()
+
+        # Show available sources
+        if available_sources:
+            print_success("✓ Available sources:")
+            for source_type in available_sources:
+                try:
+                    info = registry.get_source_info(source_type)
+                    print(f"  • {source_type:<12} - {info.get('docstring', 'No description available').split('.')[0]}")
+                except Exception:
+                    print(f"  • {source_type}")
+            print()
+
+        # Show unavailable sources
+        if unavailable_sources:
+            print_warning("⚠ Unavailable sources (missing dependencies):")
+            for source_type, missing_deps in unavailable_sources.items():
+                deps_str = ", ".join(missing_deps)
+                print(f"  • {source_type:<12} - Missing: {deps_str}")
+                print(f"{'':16}Install with: pip install {' '.join(missing_deps)}")
+            print()
+
+        # Show installation examples
+        print("Installation examples:")
+        print("  pip install presskit[postgresql]  # PostgreSQL support")
+        print("  pip install presskit[duckdb]      # DuckDB support")
+        print("  pip install presskit[all-databases]  # All database sources")
+
+        return True
+
+    except Exception as e:
+        print_error(f"Error listing sources: {e}")
+        return False
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -1467,6 +1227,9 @@ def main():
     # Clean command
     subparsers.add_parser("clean", help="Clean build artifacts and cache")
 
+    # Sources command
+    subparsers.add_parser("sources", help="List available data sources")
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -1493,6 +1256,8 @@ def main():
             return cmd_server(config)
         elif args.command == "clean":
             return cmd_clean(config)
+        elif args.command == "sources":
+            return cmd_sources()
         else:
             parser.print_help()
             sys.exit(1)

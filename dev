@@ -103,7 +103,7 @@ defhelp setup_venv 'Set up Python virtual environment.'
 cmd_setup() {
     echo "Installing package..."
 	cmd_setup_venv
-	source .venv/bin/activate; uv pip install -e .[dev]
+	source .venv/bin/activate; uv pip install -e .[dev,postgresql,duckdb]
 }
 defhelp setup 'Set up Python virtual environment.'
 
