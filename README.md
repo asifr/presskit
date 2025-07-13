@@ -5,7 +5,7 @@ A powerful static site generator that combines Markdown content with Jinja2 temp
 ## Key Features
 
 - **Jinja2 Templating**: Use Jinja2 variables and logic in both Markdown content and HTML layouts
-- **Multiple Data Sources**: Connect to SQLite, PostgreSQL, DuckDB databases, and JSON files
+- **Multiple Data Sources**: Connect to SQLite, PostgreSQL, DuckDB databases, and JSON files with JSONPath querying
 - **Dynamic Page Generation**: Generate multiple pages automatically from database query results
 - **Structured Context**: Access site metadata, build information, and data through a clean template context
 
@@ -236,6 +236,8 @@ Presskit supports multiple data source types. Add them to your `presskit.json`:
 }
 ```
 
+JSON sources support both basic data loading and advanced JSONPath querying for extracting specific data from complex JSON structures.
+
 #### Connection Strings
 
 You can also use connection strings for database sources:
@@ -248,6 +250,84 @@ You can also use connection strings for database sources:
             "connection_string": "env:DATABASE_URL"
         }
     }
+}
+```
+
+### JSON Data Querying
+
+JSON sources support powerful JSONPath expressions for extracting data from complex JSON structures. JSONPath is a query language for JSON, similar to XPath for XML.
+
+#### JSONPath Query Examples
+
+Given a JSON file `data/users.json`:
+```json
+{
+    "users": [
+        {"id": 1, "name": "Alice", "role": "admin", "posts": 25},
+        {"id": 2, "name": "Bob", "role": "editor", "posts": 12},
+        {"id": 3, "name": "Carol", "role": "admin", "posts": 8}
+    ],
+    "settings": {
+        "theme": "dark",
+        "features": ["comments", "analytics"]
+    }
+}
+```
+
+You can query this data using JSONPath expressions:
+
+```json
+{
+    "sources": {
+        "users_data": {
+            "type": "json",
+            "path": "data/users.json"
+        }
+    },
+    "queries": [
+        {
+            "name": "all_users",
+            "source": "users_data",
+            "query": "$.users[*]"
+        },
+        {
+            "name": "admin_users",
+            "source": "users_data", 
+            "query": "$.users[?(@.role == 'admin')]"
+        },
+        {
+            "name": "user_names",
+            "source": "users_data",
+            "query": "$.users[*].name"
+        },
+        {
+            "name": "active_users",
+            "source": "users_data",
+            "query": "$.users[?(@.posts > 10)]"
+        }
+    ]
+}
+```
+
+#### JSONPath Syntax Reference
+
+- `$` - Root element
+- `.` - Child element
+- `[*]` - All array elements
+- `[0]` - First array element
+- `[?(@.field == 'value')]` - Filter expression
+- `..field` - Recursive descent (find field anywhere)
+- `[start:end]` - Array slice
+
+#### Simple Dot Notation
+
+For basic access, you can also use simple dot notation:
+
+```json
+{
+    "name": "theme_setting",
+    "source": "users_data",
+    "query": "settings.theme"
 }
 ```
 
@@ -280,7 +360,7 @@ Define queries to load data from your sources:
 
 ### Using Query Data in Templates
 
-Access query results through the `data.queries` object:
+Access query results through the `data.queries` object. This works for both SQL and JSON query results:
 
 ```html
 <section class="recent-posts">
@@ -302,6 +382,27 @@ Access query results through the `data.queries` object:
     {% endfor %}
     </ul>
 </aside>
+```
+
+#### Using JSON Query Results
+
+For JSON data queries, access the results similarly:
+
+```html
+<section class="users">
+    <h2>Admin Users</h2>
+    {% for user in data.queries.admin_users %}
+    <div class="user-card">
+        <h3>{{ user.name }}</h3>
+        <p>Role: {{ user.role }}</p>
+        <p>Posts: {{ user.posts }}</p>
+    </div>
+    {% endfor %}
+</section>
+
+<div class="site-theme">
+    Current theme: {{ data.queries.theme_setting.value }}
+</div>
 ```
 
 ### Page-Level Queries
