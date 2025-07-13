@@ -5,8 +5,8 @@ A powerful static site generator that combines Markdown content with Jinja2 temp
 ## Key Features
 
 - **Jinja2 Templating**: Use Jinja2 variables and logic in both Markdown content and HTML layouts
-- **Database Integration**: Load data from SQLite databases and JSON files
-- **Dynamic Page Generation**: Generate multiple pages automatically from SQLite query results
+- **Multiple Data Sources**: Connect to SQLite, PostgreSQL, DuckDB databases, and JSON files
+- **Dynamic Page Generation**: Generate multiple pages automatically from database query results
 - **Structured Context**: Access site metadata, build information, and data through a clean template context
 
 ## Installation
@@ -19,6 +19,18 @@ Or you can use [Astral's uv](https://docs.astral.sh/uv/) Python package manager 
 
 ```bash
 uv tool install presskit
+```
+
+### Database Dependencies
+
+Presskit supports different data sources. Install additional dependencies based on your needs:
+
+```bash
+# For PostgreSQL support
+pip install presskit[postgresql]
+
+# For DuckDB support  
+pip install presskit[duckdb]
 ```
 
 ## Quick Start
@@ -166,22 +178,76 @@ This encourages separation of concerns where you keep your content in databases 
 
 ### Configuring Data Sources
 
-Add data sources to your `presskit.json`:
+Presskit supports multiple data source types. Add them to your `presskit.json`:
+
+#### SQLite
 
 ```json
 {
-    "title": "My Blog",
     "sources": {
         "blog_db": {
             "type": "sqlite",
             "path": "data/blog.db"
-        },
+        }
+    }
+}
+```
+
+#### PostgreSQL
+
+```json
+{
+    "sources": {
+        "postgres_db": {
+            "type": "postgresql", 
+            "host": "localhost",
+            "port": 5432,
+            "database": "mydb",
+            "username": "user",
+            "password": "env:DB_PASSWORD"
+        }
+    }
+}
+```
+
+#### DuckDB
+
+```json
+{
+    "sources": {
+        "analytics_db": {
+            "type": "duckdb",
+            "path": "data/analytics.duckdb"
+        }
+    }
+}
+```
+
+#### JSON Files
+
+```json
+{
+    "sources": {
         "config": {
-            "type": "json", 
+            "type": "json",
             "path": "data/site-config.json"
         }
-    },
-    "default_source": "blog_db"
+    }
+}
+```
+
+#### Connection Strings
+
+You can also use connection strings for database sources:
+
+```json
+{
+    "sources": {
+        "prod_db": {
+            "type": "postgresql",
+            "connection_string": "env:DATABASE_URL"
+        }
+    }
 }
 ```
 
@@ -362,14 +428,14 @@ Access nested data in templates:
 ### Build Commands
 
 ```bash
+# Execute queries and cache results
+presskit data
+
 # Build entire site
 presskit build
 
 # Build specific file
 presskit build content/about.md
-
-# Execute queries and cache results
-presskit data
 
 # Generate pages from generator queries  
 presskit generate
@@ -377,6 +443,8 @@ presskit generate
 # Check query cache status
 presskit status
 ```
+
+Run `data` command before `build` or `generate` to ensure all queries are executed and data is cached.
 
 ### Development
 
@@ -388,6 +456,65 @@ presskit server
 presskit clean
 ```
 
+## Environment Variables
+
+Presskit supports environment variables throughout your configuration using the `env:` prefix. This is essential for keeping sensitive data like database passwords out of your configuration files.
+
+### Using Environment Variables
+
+Any string value in your `presskit.json` can reference an environment variable:
+
+```json
+{
+    "title": "env:SITE_TITLE",
+    "url": "env:SITE_URL",
+    "sources": {
+        "database": {
+            "type": "postgresql",
+            "host": "env:DB_HOST",
+            "port": "env:DB_PORT", 
+            "database": "env:DB_NAME",
+            "username": "env:DB_USER",
+            "password": "env:DB_PASSWORD"
+        }
+    },
+    "queries": [
+        {
+            "name": "posts",
+            "source": "database",
+            "query": "env:POSTS_QUERY"
+        }
+    ]
+}
+```
+
+### Path Variables
+
+Environment variables in paths support both `${VAR}` and `$VAR` syntax:
+
+```json
+{
+    "sources": {
+        "data": {
+            "type": "sqlite",
+            "path": "${HOME}/data/blog.db"
+        }
+    }
+}
+```
+
+### Setting Environment Variables
+
+```bash
+# In your shell or .env file
+export DB_PASSWORD="your-secure-password"
+export SITE_URL="https://yoursite.com"
+export DB_HOST="localhost"
+
+# Run presskit
+presskit build
+```
+
 ## Advanced Configuration
 
 ### Full Configuration Example
@@ -397,7 +524,7 @@ presskit clean
     "title": "My Blog",
     "description": "A blog about web development",
     "author": "Jane Developer", 
-    "url": "https://myblog.dev",
+    "url": "env:SITE_URL",
     "version": "2.1.0",
     "language": "en-US",
     
@@ -408,27 +535,39 @@ presskit clean
     
     "default_template": "page",
     "markdown_extension": "md",
-    "workers": 8,
+    "workers": "env:BUILD_WORKERS",
     
     "server_host": "0.0.0.0",
-    "server_port": 8000,
+    "server_port": "env:PORT",
     
     "sources": {
         "blog_db": {
-            "type": "sqlite",
-            "path": "data/blog.sqlite3" 
+            "type": "postgresql",
+            "host": "env:DB_HOST",
+            "port": 5432,
+            "database": "env:DB_NAME",
+            "username": "env:DB_USER",
+            "password": "env:DB_PASSWORD",
+            "options": {
+                "pool_min_size": 2,
+                "pool_max_size": 10
+            }
+        },
+        "analytics": {
+            "type": "duckdb",
+            "path": "data/analytics.duckdb"
         },
         "config": {
             "type": "json",
-            "path": "data/config.json"
+            "path": "${CONFIG_DIR}/site-config.json"
         }
     },
     
     "default_source": "blog_db",
     
     "variables": {
-        "environment": "production",
-        "analytics_id": "GA-XXXXX"
+        "environment": "env:ENVIRONMENT",
+        "analytics_id": "env:ANALYTICS_ID"
     },
     
     "queries": [
@@ -444,6 +583,11 @@ presskit clean
             "name": "recent_posts",
             "source": "blog_db",
             "query": "SELECT title, slug, excerpt, date FROM posts WHERE status = 'published' ORDER BY date DESC LIMIT 5"
+        },
+        {
+            "name": "page_views",
+            "source": "analytics",
+            "query": "SELECT page, views FROM page_stats WHERE date >= current_date - interval '30 days'"
         }
     ]
 }
@@ -457,4 +601,5 @@ Presskit includes useful Jinja2 filters:
 
 ## Changes
 
+- 0.0.2 - Extensible modular data sources, DuckDB, PostgreSQL, environment variables in configuration
 - 0.0.1 - Initial version with site configuration, markdown processing, and Jinja templating

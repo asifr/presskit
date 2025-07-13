@@ -1,20 +1,16 @@
 """
 presskit - A static site generator for creating websites from markdown files and Jinja templates.
-
-Changes
--------
-0.0.1 - Initial version with site configuration, markdown processing, and Jinja templating.
 """
 
 import re
 import sys
 import json
 import yaml
+import asyncio
 import argparse
 import markdown
 import datetime
 import multiprocessing
-import asyncio
 from pathlib import Path
 from markupsafe import Markup
 from functools import partial
@@ -33,9 +29,9 @@ from presskit.config.models import (
     DataContext,
     TemplateContext,
 )
-from presskit.config.loader import EnvironmentLoader, ConfigError
 from presskit.core.query import QueryProcessor
 from presskit.sources.registry import get_registry
+from presskit.config.loader import EnvironmentLoader, ConfigError
 
 T = TypeVar("T")  # Type variables for generic functions
 
@@ -713,9 +709,6 @@ def replace_path_placeholders(path_template: str, row: Dict[str, Any]) -> str:
         result = result.replace(f"#{{{field_name}}}", sanitized_value)
 
     return result
-
-
-# Legacy SQLite functions removed - using new SQLiteSource class
 
 
 def data_status(config: SiteConfig) -> None:
