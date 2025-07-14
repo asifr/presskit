@@ -694,14 +694,86 @@ presskit build
 }
 ```
 
-### Custom Filters
+### Custom Filters and Functions
 
-Presskit includes useful Jinja2 filters:
+Presskit includes useful Jinja2 filters and functions:
 
-- `date_format(format)` - Format dates (e.g., `{{ date | date_format('%B %d, %Y') }}`)
+#### Filters
+
+- `date_format(format)` - Format dates from YYYY-MM-DD to any format
+  ```html
+  {{ "2024-01-15" | date_format('%B %d, %Y') }}
+  <!-- Output: January 15, 2024 -->
+  ```
+
+- `flatten` - Flatten a list of lists into a single list
+  ```html
+  {{ [[1, 2], [3, 4]] | flatten }}
+  <!-- Output: [1, 2, 3, 4] -->
+  ```
+
+- `stringify(sep=" ")` - Convert a value or list of values into a string
+  ```html
+  {{ ["apple", "banana", "cherry"] | stringify(", ") }}
+  <!-- Output: apple, banana, cherry -->
+  ```
+
+- `is_truthy` - Check if a value is truthy
+  ```html
+  {% if post.featured | is_truthy %}
+  <span class="featured">Featured</span>
+  {% endif %}
+  ```
+
+- `slugify(allow_unicode=False, sep="-")` - Convert a string to a URL-friendly slug
+  ```html
+  {{ "Hello World!" | slugify }}
+  <!-- Output: hello-world -->
+  ```
+
+- `plainify` - Remove all HTML tags from a string
+  ```html
+  {{ "<p>Hello <strong>world</strong></p>" | plainify }}
+  <!-- Output: Hello world -->
+  ```
+
+- `jsonify(**kwargs)` - Convert an object to a JSON string
+  ```html
+  {{ {"name": "John", "age": 30} | jsonify }}
+  <!-- Output: {"name": "John", "age": 30} -->
+  ```
+
+- `humanize` - Convert a number to a human-readable string
+  ```html
+  {{ 1234567 | humanize }}
+  <!-- Output: 1.23M -->
+  ```
+
+#### Functions
+
+- `short_random_id(prefix="", k=8, seed=None)` - Generate a random ID with optional prefix
+  ```html
+  <div id="{{ short_random_id() }}">Random ID</div>
+  <!-- Output: <div id="a7b2c4d8">Random ID</div> -->
+  
+  <button id="{{ short_random_id('btn-') }}">Click me</button>
+  <!-- Output: <button id="btn-x9y4z2w1">Click me</button> -->
+  
+  <input id="{{ short_random_id('input-', 12) }}">
+  <!-- Output: <input id="input-m5n8p3q7r2s6"> -->
+  ```
+
+- `template_debug()` - Display all available template variables in a formatted, collapsible HTML structure
+  ```html
+  <!-- Add this anywhere in your template for debugging -->
+  {{ template_debug() }}
+  ```
+  
+  This function generates a nicely formatted HTML panel showing all template variables organized by category (site, build, page, data, other). Perfect for debugging template issues or exploring what data is available in your templates.
 
 ## Changes
 
+- 0.0.5 - Filters and functions for Jinja2 templates, new `template_debug()` function for debugging templates
 - 0.0.4 - Bug fix for DuckDB data source to read relative paths correctly, DuckDB read-only mode, `--version` flag for CLI
 - 0.0.3 - `--reload` flag on build and server commands to watch for file changes and rebuild automatically
 - 0.0.2 - Extensible modular data sources, DuckDB, PostgreSQL, environment variables in configuration

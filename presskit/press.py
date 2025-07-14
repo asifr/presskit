@@ -6,21 +6,24 @@ import re
 import sys
 import json
 import yaml
+import string
+import random
 import asyncio
 import argparse
 import markdown
 import datetime
+import unicodedata
 import multiprocessing
 from pathlib import Path
+from watchfiles import watch
 from markupsafe import Markup
 from functools import partial
 from pydantic import BaseModel, Field
 from dataclasses import dataclass, field
 from jinja2.exceptions import TemplateError
-from typing import Dict, List, Optional, Any, TypeVar
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-from watchfiles import watch
+from jinja2 import Environment, FileSystemLoader, select_autoescape, pass_context
+from typing import Dict, List, Optional, Any, TypeVar, Union, Mapping, Sequence
 from presskit.utils import print_error, print_warning, print_success, print_info, print_progress
 from presskit.config.models import (
     SiteConfig,
@@ -36,6 +39,8 @@ from presskit.config.loader import EnvironmentLoader, ConfigError
 from presskit import __version__
 
 T = TypeVar("T")  # Type variables for generic functions
+_alphabet = string.ascii_lowercase + string.digits
+CLEANR = re.compile("<.*?>|&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-f]{1,6});")
 
 
 # Context Builder Functions
@@ -345,12 +350,6 @@ async def process_queries(config: SiteConfig) -> bool:
     except Exception as e:
         print_error(f"Error processing queries: {e}")
         return False
-
-
-# Legacy query processing functions removed - using new async QueryProcessor
-
-
-# Legacy data source loading functions removed - using new modular source system
 
 
 def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: SiteConfig) -> bool:
@@ -705,7 +704,7 @@ def replace_path_placeholders(path_template: str, row: Dict[str, Any]) -> str:
             field_value = row.get(field_name, "")
 
         # Sanitize value for filesystem use
-        sanitized_value = sanitize_value(field_value)
+        sanitized_value = slugify(sanitize_value(field_value))
 
         # Replace placeholder in path
         result = result.replace(f"#{{{field_name}}}", sanitized_value)
@@ -798,8 +797,326 @@ def date_format(value: str, format: str) -> str:
         return value
 
 
+def flatten(lst: List[Any]) -> List[Any]:
+    """Flatten a list of lists."""
+    if lst is None:
+        return []
+    if isinstance(lst, str):
+        return [lst]
+    result = []
+    for item in lst:
+        if isinstance(item, list):
+            result.extend(flatten(item))
+        else:
+            if item is not None:
+                result.append(item)
+    return result
+
+
+def stringify(value: Any, sep: str = " ") -> str:
+    """Turn a value or list of values into a string."""
+    if isinstance(value, list):
+        return sep.join(str(v) for v in flatten(value))
+    return str(value)
+
+
+def is_truthy(value: Any) -> bool:
+    """Return True if the value is truthy."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        return value.lower() in ["true", "yes", "1"]
+
+    return bool(value)
+
+
+def slugify(value: str, allow_unicode: bool = False, sep: str = "-"):
+    """
+    Convert a string to a slug. Spaces are replaced with hyphens and special characters are removed.
+
+    Args:
+        value (str): The string to slugify.
+        allow_unicode (bool): Whether to allow unicode characters. Defaults to False.
+        sep (str): The separator to use. Defaults to "-".
+
+    Returns:
+        str: The slugified string.
+
+    Example:
+        Convert a string to a slug.
+
+        ```python
+        slugify("Hello World")  # "hello-world"
+        ```
+    """
+    value = str(value)
+    if allow_unicode:
+        value = unicodedata.normalize("NFKC", value)
+    else:
+        value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^\w\s-]", "", value).strip().lower()
+    return re.sub(r"[-\s]+", sep, value)
+
+
+def plainify(raw_html: str) -> str:
+    """Returns a string with all HTML tags removed."""
+    if not isinstance(raw_html, str) or not raw_html:
+        return ""
+    cleantext = re.sub(CLEANR, "", raw_html)
+    return cleantext
+
+
+def jsonify(obj: Union[Mapping, Sequence], **kwargs) -> str:
+    """Convert an object to a JSON string. Keyword arguments are passed to json.dumps."""
+    # Check if obj is a Pydantic model with a model_dump method
+    if hasattr(obj, "model_dump"):
+        obj = obj.model_dump()  # type: ignore
+    kw = dict(
+        ensure_ascii=False,
+        allow_nan=False,
+        indent=None,
+        separators=(",", ":"),
+        default=str,
+        sort_keys=True,
+    )
+    kw.update(kwargs)
+    return json.dumps(obj, **kw)  # type: ignore
+
+
+def humanize(num: Union[int, float]) -> str:
+    """Convert a number to a human-readable string."""
+    num = float("{:.3g}".format(num))
+    magnitude = 0
+    while abs(num) >= 1000:
+        magnitude += 1
+        num /= 1000.0
+    return "{}{}".format("{:f}".format(num).rstrip("0").rstrip("."), ["", "K", "M", "B", "T"][magnitude])
+
+
+def short_random_id(prefix: str = "", k: int = 8, seed: Optional[int] = None) -> str:
+    """Generate a random ID up to `k` chars with an optional `prefix`."""
+    rng = random.Random(seed)
+    choices = rng.choices(_alphabet, k=k)
+    return prefix + "".join(choices)
+
+
+def _template_debug_impl(context):
+    """
+    Generate a nicely formatted HTML display of all variables available to the template.
+    
+    This function is intended for debugging Jinja2 templates by showing all available
+    variables in a collapsible, formatted HTML structure.
+    
+    Returns:
+        HTML string containing formatted variable information
+    """
+    import html
+    from datetime import datetime, date
+    from markupsafe import Markup
+    
+    def format_value(value, max_length=100):
+        """Format a value for display, truncating if too long."""
+        if value is None:
+            return '<span class="null">null</span>'
+        elif isinstance(value, bool):
+            return f'<span class="boolean">{str(value).lower()}</span>'
+        elif isinstance(value, (int, float)):
+            return f'<span class="number">{value}</span>'
+        elif isinstance(value, str):
+            if len(value) > max_length:
+                truncated = html.escape(value[:max_length])
+                return f'<span class="string">"{truncated}..." <small>({len(value)} chars)</small></span>'
+            else:
+                return f'<span class="string">"{html.escape(value)}"</span>'
+        elif isinstance(value, (list, tuple)):
+            if len(value) > 10:
+                # Show first 5 and last 5 items for large lists
+                first_items = [format_value(item, 50) for item in value[:5]]
+                last_items = [format_value(item, 50) for item in value[-5:]]
+                return f'<span class="array">[{", ".join(first_items)}, ... ({len(value)-10} more) ..., {", ".join(last_items)}]</span>'
+            elif len(value) > 5:
+                items = [format_value(item, 50) for item in value[:5]]
+                return f'<span class="array">[{", ".join(items)}, ... ({len(value)-5} more)]</span>'
+            else:
+                items = [format_value(item, 50) for item in value]
+                return f'<span class="array">[{", ".join(items)}]</span>'
+        elif isinstance(value, dict):
+            if len(value) > 10:
+                # Show first 5 and last 5 keys for large dictionaries
+                items_list = list(value.items())
+                first_items = [f'"{k}": {format_value(v, 50)}' for k, v in items_list[:5]]
+                last_items = [f'"{k}": {format_value(v, 50)}' for k, v in items_list[-5:]]
+                return f'<span class="object">{{ {", ".join(first_items)}, ... ({len(value)-10} more) ..., {", ".join(last_items)} }}</span>'
+            elif len(value) > 5:
+                items = [f'"{k}": {format_value(v, 50)}' for k, v in list(value.items())[:5]]
+                return f'<span class="object">{{ {", ".join(items)}, ... ({len(value)-5} more) }}</span>'
+            else:
+                items = [f'"{k}": {format_value(v, 50)}' for k, v in value.items()]
+                return f'<span class="object">{{ {", ".join(items)} }}</span>'
+        elif isinstance(value, (datetime, date)):
+            return f'<span class="date">{value.isoformat()}</span>'
+        else:
+            return f'<span class="other">{html.escape(str(type(value).__name__))}</span>'
+    
+    def format_section(name, data, is_nested=False):
+        """Format a section of variables."""
+        if not data:
+            return ""
+            
+        indent = "  " if is_nested else ""
+        html_parts = []
+        
+        # Limit the number of items to prevent overwhelming output
+        sorted_items = sorted(data.items())
+        
+        if len(sorted_items) > 20:
+            # Show first 10 and last 10 items for very large sections
+            items_to_show = sorted_items[:10] + sorted_items[-10:]
+            html_parts.append(f"{indent}<div><em>Showing first 10 and last 10 of {len(sorted_items)} items</em></div>")
+            
+            for i, (key, value) in enumerate(items_to_show):
+                if i == 10:
+                    html_parts.append(f"{indent}<div><em>... ({len(sorted_items)-20} items omitted) ...</em></div>")
+        elif len(sorted_items) > 10:
+            # Show first 10 items for moderately large sections  
+            items_to_show = sorted_items[:10]
+            html_parts.append(f"{indent}<div><em>Showing first 10 of {len(sorted_items)} items</em></div>")
+        else:
+            items_to_show = sorted_items
+            
+        for key, value in items_to_show:
+            if isinstance(value, dict) and len(value) > 0:
+                # Nested object - use details/summary
+                nested_content = format_section(f"{name}.{key}", value, True)
+                html_parts.append(f"""
+                {indent}<details>
+                {indent}  <summary><strong>{key}</strong> <span class="object">{{ {len(value)} keys }}</span></summary>
+                {indent}  <div class="nested">
+                {nested_content}
+                {indent}  </div>
+                {indent}</details>
+                """)
+            else:
+                # Regular value
+                formatted_value = format_value(value)
+                html_parts.append(f"{indent}<div><strong>{key}:</strong> {formatted_value}</div>")
+        
+        return "\n".join(html_parts)
+    
+    # Get all template variables from the provided context
+    jinja_builtins = {'range', 'dict', 'list', 'namespace', 'cycler', 'joiner', 'lipsum', 'template_debug', 'short_random_id'}
+    template_vars = {k: v for k, v in context.items() if k not in jinja_builtins}
+    
+    # Group variables by category
+    categories = {
+        'site': {},
+        'build': {},
+        'page': {},
+        'data': {},
+        'other': {}
+    }
+    
+    for key, value in template_vars.items():
+        if key.startswith('site'):
+            categories['site'][key] = value
+        elif key.startswith('build'):
+            categories['build'][key] = value
+        elif key.startswith('page'):
+            categories['page'][key] = value
+        elif key.startswith('data'):
+            categories['data'][key] = value
+        else:
+            categories['other'][key] = value
+    
+    # Generate HTML
+    html_parts = ["""
+    <div class="template-debug" style="
+        background: #F5F5F5;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 20px 0;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 12px;
+        line-height: 1.25;
+        color: #333;
+        max-width: 100%;
+        overflow-x: auto;
+    ">
+        <h3 style="margin-top: 0; color: #495057; border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">
+            Template Debug
+        </h3>
+        
+        <style>
+            .template-debug .string { color: #198754; }
+            .template-debug .number { color: #0d6efd; }
+            .template-debug .boolean { color: #6610f2; }
+            .template-debug .null { color: #495057; font-style: italic; }
+            .template-debug .array { color: #fd7e14; }
+            .template-debug .object { color: rgba(0, 125, 33, 1); }
+            .template-debug .date { color: #d63384; }
+            .template-debug .other { color: #495057; }
+            .template-debug .nested { 
+                margin-left: 20px; 
+                border-left: 2px solid #dee2e6; 
+                padding-left: 15px; 
+                margin-top: 10px;
+            }
+            .template-debug details { margin: 5px 0; }
+            .template-debug summary { 
+                cursor: pointer; 
+                padding: 5px;
+                background: rgba(207, 207, 207, 1);
+                color: #000;
+                border-radius: 4px;
+                margin-bottom: 5px;
+            }
+            .template-debug summary:hover { background: rgba(193, 193, 193, 1); }
+            .template-debug div { margin: 3px 0; }
+        </style>
+    """]
+    
+    # Add each category
+    for category_name, category_data in categories.items():
+        if category_data:
+            html_parts.append(f"""
+            <details open>
+                <summary><h4 style="margin: 0; display: inline;">{category_name.title()} Variables</h4></summary>
+                <div class="nested">
+                    {format_section(category_name, category_data)}
+                </div>
+            </details>
+            """)
+    
+    html_parts.append("</div>")
+    
+    return Markup("\n".join(html_parts))
+
+
+@pass_context
+def template_debug(context):
+    """
+    Context-aware template debug function that can be called from Jinja2 templates.
+    """
+    return _template_debug_impl(context)
+
+
 JINJA_FILTERS = {
     "date_format": date_format,
+    "flatten": flatten,
+    "stringify": stringify,
+    "is_truthy": is_truthy,
+    "slugify": slugify,
+    "plainify": plainify,
+    "jsonify": jsonify,
+    "humanize": humanize,
+}
+
+JINJA_GLOBALS = {
+    "short_random_id": short_random_id,
+    "template_debug": template_debug,
 }
 
 
@@ -820,6 +1137,7 @@ def process_sql_template(sql_query: str, variables: Dict[str, Any]) -> str:
     try:
         env = Environment()
         env.filters.update(JINJA_FILTERS)
+        env.globals.update(JINJA_GLOBALS)
         template = env.from_string(sql_query)
         processed_sql = template.render(**variables)
         return processed_sql
@@ -850,6 +1168,7 @@ def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Pa
             extensions=["jinja2.ext.debug"],
         )
         env.filters.update(JINJA_FILTERS)
+        env.globals.update(JINJA_GLOBALS)
 
         # Create template from string
         template = env.from_string(md_content)
@@ -910,6 +1229,7 @@ def process_template(template_name: str, variables: Dict[str, Any], templates_di
             extensions=["jinja2.ext.debug"],
         )
         env.filters.update(JINJA_FILTERS)
+        env.globals.update(JINJA_GLOBALS)
 
         # Mark content variable as safe HTML if it exists
         if "page" in variables and "content" in variables["page"]:
