@@ -33,6 +33,7 @@ from presskit.config.models import (
 from presskit.core.query import QueryProcessor
 from presskit.sources.registry import get_registry
 from presskit.config.loader import EnvironmentLoader, ConfigError
+from presskit import __version__
 
 T = TypeVar("T")  # Type variables for generic functions
 
@@ -1373,6 +1374,11 @@ def main():
         "--config",
         type=str,
         help="Path to presskit.json config file (default: ./presskit.json)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"presskit {__version__}",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
