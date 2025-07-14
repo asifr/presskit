@@ -20,6 +20,7 @@ from jinja2.exceptions import TemplateError
 from typing import Dict, List, Optional, Any, TypeVar
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from watchfiles import watch
 from presskit.utils import print_error, print_warning, print_success, print_info, print_progress
 from presskit.config.models import (
     SiteConfig,
@@ -1011,17 +1012,103 @@ def cmd_generate(config: SiteConfig) -> bool:
     return process_generators(config)
 
 
-def cmd_build(config: SiteConfig, file: Optional[str] = None) -> bool:
+def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = False) -> bool:
     """
     Build the site.
 
     Args:
         config: Site configuration
         file: Optional specific file to build
+        reload: Whether to watch for changes and rebuild automatically
 
     Returns:
         True if successful, False otherwise
     """
+    if reload:
+        print("Building with auto-reload enabled...")
+        print("Watching for changes in content/, templates/, and data directories...")
+        print("Press Ctrl+C to stop.")
+
+        def do_build():
+            """Perform the actual build process."""
+            print("\n" + "=" * 50)
+            print(f"Building at {datetime.datetime.now().strftime('%H:%M:%S')}...")
+
+            # Ensure directories exist
+            ensure_directories(config)
+
+            # Check if query cache exists when there are sources/queries configured
+            if config.sources and not check_query_cache(config):
+                print_warning("Query cache not found but sources are configured.")
+                print("Run 'presskit data' first to execute queries and create cache.")
+                return False
+
+            # Load query cache if available
+            query_cache_file = get_query_cache_file(config)
+            query_cache = load_json(query_cache_file) if check_query_cache(config) else None
+
+            # Check if a specific file should be built
+            if file:
+                file_path = Path(file)
+                if not file_path.exists():
+                    print_error(f"File not found: {file_path}")
+                    return False
+                files = [file_path]
+            else:
+                # Build all markdown files
+                files = list(config.content_dir.glob(f"**/*.{config.markdown_extension}"))
+
+            if not files:
+                print_error("No files to process!")
+                return False
+
+            print_info(f"Found {len(files)} files to process")
+
+            # Build files - use parallel for multiple files
+            build_success = False
+            if len(files) == 1 or config.workers == 1:
+                # Build sequentially for a single file or if workers=1
+                success_count = 0
+                for file_path in files:
+                    if build_file(file_path, query_cache, config):
+                        success_count += 1
+                build_success = success_count == len(files)
+            else:
+                # Build in parallel for multiple files
+                build_success = build_parallel(files, query_cache, config)
+
+            # Process generator queries if available and not building a specific file
+            if not file and query_cache and "generators" in query_cache:
+                process_generators(config)
+
+            if build_success:
+                print_success("Build complete!")
+            else:
+                print_warning("Build completed with some errors.")
+
+            return build_success
+
+        # Initial build
+        do_build()
+
+        # Set up file watching
+        watch_paths = [config.content_dir, config.templates_dir]
+
+        # Add data directory if it exists (for JSON sources)
+        data_dir = config.site_dir / "data"
+        if data_dir.exists():
+            watch_paths.append(data_dir)
+
+        try:
+            for changes in watch(*watch_paths):
+                print(
+                    f"\nDetected changes: {[str(Path(change[1]).relative_to(config.site_dir)) for change in changes]}"
+                )
+                do_build()
+        except KeyboardInterrupt:
+            print("\nStopping file watcher.")
+            return True
+
     print("Building...")
 
     # Ensure directories exist
@@ -1082,16 +1169,22 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None) -> bool:
     return build_success
 
 
-def cmd_server(config: SiteConfig) -> bool:
+def cmd_server(config: SiteConfig, reload: bool = False) -> bool:
     """
     Start a development server.
 
     Args:
         config: Site configuration
+        reload: Whether to watch for changes and rebuild automatically
     """
     import http.server
+    import threading
 
-    print("Starting server...")
+    if reload:
+        print("Starting server with auto-reload enabled...")
+        print("Watching for changes in content/, templates/, and data directories...")
+    else:
+        print("Starting server...")
 
     # If public directory is empty, suggest building first
     if not list(config.output_dir.glob("*")):
@@ -1107,6 +1200,82 @@ def cmd_server(config: SiteConfig) -> bool:
 
     print_success(f"Server running at http://{host}:{port}/")
     print("Press Ctrl+C to stop.")
+
+    if reload:
+
+        def do_build():
+            """Perform the actual build process."""
+            print("\n" + "=" * 50)
+            print(f"Rebuilding at {datetime.datetime.now().strftime('%H:%M:%S')}...")
+
+            # Ensure directories exist
+            ensure_directories(config)
+
+            # Check if query cache exists when there are sources/queries configured
+            if config.sources and not check_query_cache(config):
+                print_warning("Query cache not found but sources are configured.")
+                print("Run 'presskit data' first to execute queries and create cache.")
+                return False
+
+            # Load query cache if available
+            query_cache_file = get_query_cache_file(config)
+            query_cache = load_json(query_cache_file) if check_query_cache(config) else None
+
+            # Build all markdown files
+            files = list(config.content_dir.glob(f"**/*.{config.markdown_extension}"))
+
+            if not files:
+                print_error("No files to process!")
+                return False
+
+            print_info(f"Found {len(files)} files to process")
+
+            # Build files - use parallel for multiple files
+            build_success = False
+            if len(files) == 1 or config.workers == 1:
+                # Build sequentially for a single file or if workers=1
+                success_count = 0
+                for file_path in files:
+                    if build_file(file_path, query_cache, config):
+                        success_count += 1
+                build_success = success_count == len(files)
+            else:
+                # Build in parallel for multiple files
+                build_success = build_parallel(files, query_cache, config)
+
+            # Process generator queries if available
+            if query_cache and "generators" in query_cache:
+                process_generators(config)
+
+            if build_success:
+                print_success("Rebuild complete!")
+            else:
+                print_warning("Rebuild completed with some errors.")
+
+            return build_success
+
+        # Set up file watching in a separate thread
+        watch_paths = [config.content_dir, config.templates_dir]
+
+        # Add data directory if it exists (for JSON sources)
+        data_dir = config.site_dir / "data"
+        if data_dir.exists():
+            watch_paths.append(data_dir)
+
+        def file_watcher():
+            """Watch for file changes and rebuild when needed."""
+            try:
+                for changes in watch(*watch_paths):
+                    print(
+                        f"\nDetected changes: {[str(Path(change[1]).relative_to(config.site_dir)) for change in changes]}"
+                    )
+                    do_build()
+            except Exception as e:
+                print_error(f"File watcher error: {e}")
+
+        # Start file watcher in background thread
+        watcher_thread = threading.Thread(target=file_watcher, daemon=True)
+        watcher_thread.start()
 
     try:
         server.serve_forever()
@@ -1211,6 +1380,7 @@ def main():
     # Build command
     build_parser = subparsers.add_parser("build", help="Build the site")
     build_parser.add_argument("file", nargs="?", help="Specific file to build (optional)")
+    build_parser.add_argument("--reload", action="store_true", help="Watch for changes and rebuild automatically")
 
     # Data command
     subparsers.add_parser("data", help="Execute all SQL queries and cache results")
@@ -1222,7 +1392,8 @@ def main():
     subparsers.add_parser("generate", help="Generate pages from generator queries")
 
     # Server command
-    subparsers.add_parser("server", help="Start a development server")
+    server_parser = subparsers.add_parser("server", help="Start a development server")
+    server_parser.add_argument("--reload", action="store_true", help="Watch for changes and rebuild automatically")
 
     # Clean command
     subparsers.add_parser("clean", help="Clean build artifacts and cache")
@@ -1245,7 +1416,7 @@ def main():
     # Route to appropriate command
     try:
         if args.command == "build":
-            return cmd_build(config, getattr(args, "file", None))
+            return cmd_build(config, getattr(args, "file", None), getattr(args, "reload", False))
         elif args.command == "data":
             return cmd_data(config)
         elif args.command == "status":
@@ -1253,7 +1424,7 @@ def main():
         elif args.command == "generate":
             return cmd_generate(config)
         elif args.command == "server":
-            return cmd_server(config)
+            return cmd_server(config, getattr(args, "reload", False))
         elif args.command == "clean":
             return cmd_clean(config)
         elif args.command == "sources":
