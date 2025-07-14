@@ -702,6 +702,7 @@ Presskit includes useful Jinja2 filters:
 
 ## Changes
 
+- 0.0.4 - Bug fix for DuckDB data source to read relative paths correctly
 - 0.0.3 - `--reload` flag on build and server commands to watch for file changes and rebuild automatically
 - 0.0.2 - Extensible modular data sources, DuckDB, PostgreSQL, environment variables in configuration
 - 0.0.1 - Initial version with site configuration, markdown processing, and Jinja templating

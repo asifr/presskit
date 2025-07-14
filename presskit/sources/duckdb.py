@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 class DuckDBSource(QueryableSource):
     """DuckDB data source with async support."""
 
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, site_dir=None):
+        super().__init__(config, site_dir)
         self._connection: Optional[Any] = None
 
     @classmethod
@@ -37,7 +37,13 @@ class DuckDBSource(QueryableSource):
             # DuckDB connection parameters
             if self.config.path:
                 # File-based database
-                db_path = Path(self.config.path)
+                # Resolve path relative to site directory if needed
+                if self.site_dir:
+                    db_path = self.config.get_resolved_path(Path(self.site_dir))
+                    if not db_path:
+                        raise ConnectionError("DuckDB source requires 'path' configuration")
+                else:
+                    db_path = Path(self.config.path)
                 connect_kwargs = {"database": str(db_path), **self.config.options}
             else:
                 # In-memory database
@@ -181,7 +187,7 @@ class DuckDBSource(QueryableSource):
         Args:
             extension_name: Name of the extension to install
         """
-        if not self._is_connected:
+        if not self._is_connected or not self._connection:
             raise ConnectionError("Not connected to DuckDB database")
 
         try:
@@ -200,7 +206,7 @@ class DuckDBSource(QueryableSource):
             table_name: Name of table to create
             **options: CSV loading options (header, delimiter, etc.)
         """
-        if not self._is_connected:
+        if not self._is_connected or not self._connection:
             raise ConnectionError("Not connected to DuckDB database")
 
         try:
@@ -231,7 +237,7 @@ class DuckDBSource(QueryableSource):
             file_path: Path to Parquet file
             table_name: Name of table to create
         """
-        if not self._is_connected:
+        if not self._is_connected or not self._connection:
             raise ConnectionError("Not connected to DuckDB database")
 
         try:
@@ -287,7 +293,7 @@ class DuckDBSource(QueryableSource):
         Args:
             script_path: Path to SQL script file
         """
-        if not self._is_connected:
+        if not self._is_connected or not self._connection:
             raise ConnectionError("Not connected to DuckDB database")
 
         try:
@@ -318,7 +324,7 @@ class DuckDBSource(QueryableSource):
             output_path: Path to output CSV file
             **options: CSV export options
         """
-        if not self._is_connected:
+        if not self._is_connected or not self._connection:
             raise ConnectionError("Not connected to DuckDB database")
 
         try:
