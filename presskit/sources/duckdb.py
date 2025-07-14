@@ -49,6 +49,8 @@ class DuckDBSource(QueryableSource):
                 # In-memory database
                 connect_kwargs = {"database": ":memory:", **self.config.options}
 
+            # Use read-only mode to allow parallel access during builds
+            connect_kwargs['read_only'] = True
             self._connection = duckdb.connect(**connect_kwargs)
 
             # Configure DuckDB settings from options
