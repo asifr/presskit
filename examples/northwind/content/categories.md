@@ -5,6 +5,8 @@ layout: page
 
 ## All Products by category
 
+This page lists all categories and their products. Click on a category name to see more details about that category and its products.
+
 <table>
 	<tr>
 		<th>ID</th>

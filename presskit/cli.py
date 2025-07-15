@@ -210,6 +210,10 @@ def build(
         bool,
         typer.Option("--reload", help="Watch for changes and rebuild automatically"),
     ] = False,
+    disable_smart_reload: Annotated[
+        bool,
+        typer.Option("--disable-smart-reload", help="Rebuild everything on change"),
+    ] = False,
     config: Annotated[
         t.Optional[str],
         typer.Option("--config", help="Path to presskit.json config file"),
@@ -221,7 +225,7 @@ def build(
         site_config = load_site_config(config_path)
         print_info(f"Using config: {config_path}")
 
-        success = cmd_build(site_config, file, reload)
+        success = cmd_build(site_config, file, reload, smart_reload=not disable_smart_reload)
         if not success:
             raise typer.Exit(1)
     except (FileNotFoundError, ConfigError) as e:
@@ -334,6 +338,10 @@ def server(
         bool,
         typer.Option("--reload", help="Watch for changes and rebuild automatically"),
     ] = False,
+    disable_smart_reload: Annotated[
+        bool,
+        typer.Option("--disable-smart-reload", help="Rebuild everything on change"),
+    ] = False,
     config: Annotated[
         t.Optional[str],
         typer.Option("--config", help="Path to presskit.json config file"),
@@ -345,7 +353,7 @@ def server(
         site_config = load_site_config(config_path)
         print_info(f"Using config: {config_path}")
 
-        success = cmd_server(site_config, reload)
+        success = cmd_server(site_config, reload, smart_reload=not disable_smart_reload)
         if not success:
             raise typer.Exit(1)
     except (FileNotFoundError, ConfigError) as e:

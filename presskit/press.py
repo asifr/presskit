@@ -34,6 +34,7 @@ from presskit.config.models import (
 from presskit.core.query import QueryProcessor
 from presskit.sources.registry import get_registry
 from presskit.config.loader import EnvironmentLoader, ConfigError
+from presskit.reload import SmartReloader, Dependencies
 
 T = TypeVar("T")  # Type variables for generic functions
 _alphabet = string.ascii_lowercase + string.digits
@@ -349,6 +350,40 @@ async def process_queries(config: SiteConfig) -> bool:
         return False
 
 
+def build_file_with_tracking(
+    file_path: Path,
+    query_cache: Optional[Dict[str, Any]],
+    config: SiteConfig,
+    smart_reloader: Optional[SmartReloader] = None,
+) -> bool:
+    """Build a single markdown file with dependency tracking."""
+    result = build_file(file_path, query_cache, config)
+
+    # Track dependencies if smart reloader is enabled
+    if result and smart_reloader:
+        try:
+            # Read front matter to extract template and query dependencies
+            with open(file_path, "r") as f:
+                content = f.read()
+
+            front_matter, _, md_queries = extract_front_matter(content)
+
+            # Create dependencies
+            deps = Dependencies(
+                templates={front_matter.get("layout", config.default_template)},
+                data_sources=set(),
+                queries=set(md_queries.keys()) if md_queries else set(),
+            )
+
+            # Track template usage and dependencies
+            smart_reloader.update_file_state(file_path, deps)
+
+        except Exception as e:
+            print_warning(f"Failed to track dependencies for {file_path}: {e}")
+
+    return result
+
+
 def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: SiteConfig) -> bool:
     """
     Build a single markdown file with structured template context.
@@ -432,6 +467,67 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
         return False
 
 
+def build_parallel_with_tracking(
+    files: List[Path],
+    query_cache: Optional[Dict[str, Any]],
+    config: SiteConfig,
+    smart_reloader: Optional[SmartReloader] = None,
+) -> bool:
+    """Build multiple files in parallel with dependency tracking."""
+    max_workers = min(config.workers, multiprocessing.cpu_count())
+    total_files = len(files)
+    print_info(f"Building {total_files} files using {max_workers} workers...")
+
+    # Track progress
+    completed = 0
+    failed = 0
+    success_paths: List[Path] = []
+    failed_paths: List[Path] = []
+
+    # Use ThreadPoolExecutor for IO-bound operations
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_file = {
+            executor.submit(build_file_with_tracking, file, query_cache, config, smart_reloader): file for file in files
+        }
+
+        # Print initial progress
+        print_progress(completed, total_files)
+
+        # Process as they complete
+        for future in as_completed(future_to_file):
+            file = future_to_file[future]
+            try:
+                result = future.result()
+                if result:
+                    success_paths.append(file)
+                else:
+                    failed += 1
+                    failed_paths.append(file)
+            except Exception as e:
+                failed += 1
+                failed_paths.append(file)
+                print_error(f"Error building {file}: {e}")
+
+            completed += 1
+            # Update progress every 5% or for every file if few files
+            if completed % max(1, total_files // 20) == 0 or completed == total_files:
+                print_progress(completed, total_files)
+
+    # Final status
+    if failed == 0:
+        print_success(f"Successfully built all {total_files} files")
+        return True
+    else:
+        print_error(f"Built {completed - failed} files successfully, {failed} files failed")
+        # Print failed files if there aren't too many
+        if failed <= 10:
+            print_error("Failed files:")
+            for path in failed_paths:
+                print_error(f"  - {path}")
+        return False
+
+
 def build_parallel(files: List[Path], query_cache: Optional[Dict[str, Any]], config: SiteConfig) -> bool:
     """
     Build multiple files in parallel with progress tracking.
@@ -494,6 +590,133 @@ def build_parallel(files: List[Path], query_cache: Optional[Dict[str, Any]], con
             for path in failed_paths:
                 print_error(f"  - {path}")
         return False
+
+
+def process_generators_with_tracking(config: SiteConfig, smart_reloader: Optional[SmartReloader] = None) -> bool:
+    """Process generator queries with dependency tracking."""
+    result = process_generators(config)
+
+    # Track generator states if smart reloader is enabled
+    if result and smart_reloader:
+        try:
+            for query_def in config.queries:
+                if query_def.generator:
+                    smart_reloader.update_generator_state(query_def.name, query_def)
+        except Exception as e:
+            print_warning(f"Failed to track generator states: {e}")
+
+    return result
+
+
+def process_specific_generators(
+    config: SiteConfig, generator_names: List[str], smart_reloader: Optional[SmartReloader] = None
+) -> bool:
+    """Process only specific generator queries."""
+    print(f"Processing {len(generator_names)} specific generators...")
+
+    query_cache_file = get_query_cache_file(config)
+
+    # Load query cache
+    cache_data = load_json(query_cache_file)
+    if not cache_data:
+        return False
+
+    # Get generator queries
+    generators = cache_data.get("generators", {})
+    if not generators:
+        print_warning("No generator queries found in cache.")
+        return False
+
+    # Filter to only requested generators
+    filtered_generators = {name: results for name, results in generators.items() if name in generator_names}
+
+    if not filtered_generators:
+        print_warning(f"None of the requested generators found: {generator_names}")
+        return False
+
+    # Process each requested generator
+    generated_pages = 0
+    failed_pages = 0
+
+    for query_name, results in filtered_generators.items():
+        print(f"Processing generator: {query_name} ({len(results)} pages)")
+
+        # Find the query definition
+        query_def = next((q for q in config.queries if q.name == query_name), None)
+        if not query_def:
+            print_warning(f"Query definition not found for: {query_name}")
+            continue
+
+        # Get template name
+        template_name = query_def.template or "page"
+        template_file = config.templates_dir / f"{template_name}.html"
+
+        if not template_file.exists():
+            print_error(f"Template not found: {template_file}")
+            continue
+
+        # Get output path pattern
+        output_path = query_def.output_path
+        if not output_path:
+            print_warning(f"No output_path defined for generator: {query_name}")
+            continue
+
+        # Process each row in the results
+        for row in results:
+            try:
+                # Replace placeholders in the output path
+                actual_path = replace_path_placeholders(output_path, row)
+
+                # Create necessary directories
+                output_dir = config.output_dir / Path(actual_path).parent
+                output_dir.mkdir(exist_ok=True, parents=True)
+
+                # Build structured context for generator page
+                site_ctx = build_site_context(config)
+                build_ctx = build_build_context()
+
+                # Create page context for generated page
+                page_ctx = PageContext(
+                    filename=Path(actual_path).stem,
+                    filepath=actual_path,
+                    path=actual_path,
+                    content=None,
+                    layout=template_name,
+                    title=row.get("title"),
+                    description=row.get("description"),
+                )
+
+                data_ctx = build_data_context(cache_data, {})
+
+                # Create template context with row data as front matter
+                template_context = TemplateContext(
+                    site=site_ctx, build=build_ctx, page=page_ctx, data=data_ctx, extras=row
+                )
+
+                # Process the template
+                output_html = process_template(template_name, template_context.to_template_vars(), config.templates_dir)
+
+                # Write output file
+                output_file = config.output_dir / f"{actual_path}.html"
+                with open(output_file, "w") as f:
+                    f.write(output_html)
+
+                generated_pages += 1
+
+            except Exception as e:
+                failed_pages += 1
+                print_error(f"Error generating page {actual_path}: {e}")
+
+        # Track generator state if smart reloader is enabled
+        if smart_reloader:
+            smart_reloader.update_generator_state(query_name, query_def)
+
+    if failed_pages == 0:
+        print_success(f"Successfully generated {generated_pages} pages from {len(filtered_generators)} generators")
+        return True
+    else:
+        print_warning(f"Generated {generated_pages} pages with {failed_pages} failures")
+        return generated_pages > 0
 
 
 def process_generators(config: SiteConfig) -> bool:
@@ -1336,7 +1559,7 @@ def cmd_generate(config: SiteConfig) -> bool:
     return process_generators(config)
 
 
-def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = False) -> bool:
+def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = False, smart_reload: bool = True) -> bool:
     """
     Build the site.
 
@@ -1344,16 +1567,22 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
         config: Site configuration
         file: Optional specific file to build
         reload: Whether to watch for changes and rebuild automatically
+        smart_reload: Whether to use smart reload optimization
 
     Returns:
         True if successful, False otherwise
     """
     if reload:
+        smart_reloader = SmartReloader(config, enabled=smart_reload)
         print("Building with auto-reload enabled...")
+        if smart_reload:
+            print("Smart reload optimization enabled (use --disable-smart-reload to disable)")
+        else:
+            print("Smart reload optimization disabled")
         print("Watching for changes in content/, templates/, and data directories...")
         print("Press Ctrl+C to stop.")
 
-        def do_build():
+        def do_build(rebuild_plan=None):
             """Perform the actual build process."""
             print("\n" + "=" * 50)
             print(f"Building at {datetime.datetime.now().strftime('%H:%M:%S')}...")
@@ -1371,46 +1600,64 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
             query_cache_file = get_query_cache_file(config)
             query_cache = load_json(query_cache_file) if check_query_cache(config) else None
 
-            # Check if a specific file should be built
+            # Determine what to build
             if file:
+                # Build specific file
                 file_path = Path(file)
                 if not file_path.exists():
                     print_error(f"File not found: {file_path}")
                     return False
                 files = [file_path]
+                generators_to_build = []
+            elif rebuild_plan and not rebuild_plan.full_rebuild:
+                # Use smart rebuild plan
+                files = rebuild_plan.content_files
+                generators_to_build = rebuild_plan.generators
+                print_info(f"Smart rebuild: {rebuild_plan.reason}")
+                print_info(f"Building {len(files)} files and {len(generators_to_build)} generators")
             else:
                 # Build all markdown files
                 files = list(config.content_dir.glob(f"**/*.{config.markdown_extension}"))
+                generators_to_build = []
 
-            if not files:
-                print_error("No files to process!")
-                return False
+            if not files and not generators_to_build:
+                print_info("No files to process!")
+                return True
 
-            print_info(f"Found {len(files)} files to process")
+            if files:
+                print_info(f"Found {len(files)} files to process")
 
-            # Build files - use parallel for multiple files
-            build_success = False
-            if len(files) == 1 or config.workers == 1:
-                # Build sequentially for a single file or if workers=1
-                success_count = 0
-                for file_path in files:
-                    if build_file(file_path, query_cache, config):
-                        success_count += 1
-                build_success = success_count == len(files)
-            else:
-                # Build in parallel for multiple files
-                build_success = build_parallel(files, query_cache, config)
+                # Build files - use parallel for multiple files
+                build_success = False
+                if len(files) == 1 or config.workers == 1:
+                    # Build sequentially for a single file or if workers=1
+                    success_count = 0
+                    for file_path in files:
+                        if build_file_with_tracking(file_path, query_cache, config, smart_reloader):
+                            success_count += 1
+                    build_success = success_count == len(files)
+                else:
+                    # Build in parallel for multiple files
+                    build_success = build_parallel_with_tracking(files, query_cache, config, smart_reloader)
+
+                if not build_success:
+                    print_warning("Build completed with some errors.")
+                    return False
 
             # Process generator queries if available and not building a specific file
             if not file and query_cache and "generators" in query_cache:
-                process_generators(config)
+                if generators_to_build:
+                    # Build only specific generators
+                    process_specific_generators(config, generators_to_build, smart_reloader)
+                elif rebuild_plan and not rebuild_plan.full_rebuild:
+                    # Smart rebuild with no generators to rebuild - skip generators
+                    pass
+                else:
+                    # Build all generators (only for full rebuilds or initial builds)
+                    process_generators_with_tracking(config, smart_reloader)
 
-            if build_success:
-                print_success("Build complete!")
-            else:
-                print_warning("Build completed with some errors.")
-
-            return build_success
+            print_success("Build complete!")
+            return True
 
         # Initial build
         do_build()
@@ -1428,7 +1675,8 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
                 print(
                     f"\nDetected changes: {[str(Path(change[1]).relative_to(config.site_dir)) for change in changes]}"
                 )
-                do_build()
+                rebuild_plan = smart_reloader.analyze_changes(changes)
+                do_build(rebuild_plan)
         except KeyboardInterrupt:
             print("\nStopping file watcher.")
             return True
@@ -1493,19 +1741,24 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
     return build_success
 
 
-def cmd_server(config: SiteConfig, reload: bool = False) -> bool:
+def cmd_server(config: SiteConfig, reload: bool = False, smart_reload: bool = True) -> bool:
     """
     Start a development server.
 
     Args:
         config: Site configuration
         reload: Whether to watch for changes and rebuild automatically
+        smart_reload: Whether to use smart reload optimization
     """
     import http.server
     import threading
 
     if reload:
         print("Starting server with auto-reload enabled...")
+        if smart_reload:
+            print("Smart reload optimization enabled (use --disable-smart-reload to disable)")
+        else:
+            print("Smart reload optimization disabled")
         print("Watching for changes in content/, templates/, and data directories...")
     else:
         print("Starting server...")
@@ -1515,7 +1768,7 @@ def cmd_server(config: SiteConfig, reload: bool = False) -> bool:
         if reload:
             print_warning("Output directory is empty. Running initial build...")
             # Run initial build
-            if not cmd_build(config):
+            if not cmd_build(config, smart_reload=smart_reload):
                 print_error("Initial build failed.")
                 return False
         else:
@@ -1533,8 +1786,9 @@ def cmd_server(config: SiteConfig, reload: bool = False) -> bool:
     print("Press Ctrl+C to stop.")
 
     if reload:
+        smart_reloader = SmartReloader(config, enabled=smart_reload)
 
-        def do_build():
+        def do_build(rebuild_plan=None):
             """Perform the actual build process."""
             print("\n" + "=" * 50)
             print(f"Rebuilding at {datetime.datetime.now().strftime('%H:%M:%S')}...")
@@ -1552,38 +1806,56 @@ def cmd_server(config: SiteConfig, reload: bool = False) -> bool:
             query_cache_file = get_query_cache_file(config)
             query_cache = load_json(query_cache_file) if check_query_cache(config) else None
 
-            # Build all markdown files
-            files = list(config.content_dir.glob(f"**/*.{config.markdown_extension}"))
-
-            if not files:
-                print_error("No files to process!")
-                return False
-
-            print_info(f"Found {len(files)} files to process")
-
-            # Build files - use parallel for multiple files
-            build_success = False
-            if len(files) == 1 or config.workers == 1:
-                # Build sequentially for a single file or if workers=1
-                success_count = 0
-                for file_path in files:
-                    if build_file(file_path, query_cache, config):
-                        success_count += 1
-                build_success = success_count == len(files)
+            # Determine what to build
+            if rebuild_plan and not rebuild_plan.full_rebuild:
+                # Use smart rebuild plan
+                files = rebuild_plan.content_files
+                generators_to_build = rebuild_plan.generators
+                print_info(f"Smart rebuild: {rebuild_plan.reason}")
+                print_info(f"Building {len(files)} files and {len(generators_to_build)} generators")
             else:
-                # Build in parallel for multiple files
-                build_success = build_parallel(files, query_cache, config)
+                # Build all markdown files
+                files = list(config.content_dir.glob(f"**/*.{config.markdown_extension}"))
+                generators_to_build = []
+
+            if not files and not generators_to_build:
+                print_info("No files to process!")
+                return True
+
+            if files:
+                print_info(f"Found {len(files)} files to process")
+
+                # Build files - use parallel for multiple files
+                build_success = False
+                if len(files) == 1 or config.workers == 1:
+                    # Build sequentially for a single file or if workers=1
+                    success_count = 0
+                    for file_path in files:
+                        if build_file_with_tracking(file_path, query_cache, config, smart_reloader):
+                            success_count += 1
+                    build_success = success_count == len(files)
+                else:
+                    # Build in parallel for multiple files
+                    build_success = build_parallel_with_tracking(files, query_cache, config, smart_reloader)
+
+                if not build_success:
+                    print_warning("Rebuild completed with some errors.")
+                    return False
 
             # Process generator queries if available
             if query_cache and "generators" in query_cache:
-                process_generators(config)
+                if generators_to_build:
+                    # Build only specific generators
+                    process_specific_generators(config, generators_to_build, smart_reloader)
+                elif rebuild_plan and not rebuild_plan.full_rebuild:
+                    # Smart rebuild with no generators to rebuild - skip generators
+                    pass
+                else:
+                    # Build all generators (only for full rebuilds or initial builds)
+                    process_generators_with_tracking(config, smart_reloader)
 
-            if build_success:
-                print_success("Rebuild complete!")
-            else:
-                print_warning("Rebuild completed with some errors.")
-
-            return build_success
+            print_success("Rebuild complete!")
+            return True
 
         # Set up file watching in a separate thread
         watch_paths = [config.content_dir, config.templates_dir]
@@ -1600,7 +1872,8 @@ def cmd_server(config: SiteConfig, reload: bool = False) -> bool:
                     print(
                         f"\nDetected changes: {[str(Path(change[1]).relative_to(config.site_dir)) for change in changes]}"
                     )
-                    do_build()
+                    rebuild_plan = smart_reloader.analyze_changes(changes)
+                    do_build(rebuild_plan)
             except Exception as e:
                 print_error(f"File watcher error: {e}")
 

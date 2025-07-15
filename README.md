@@ -802,6 +802,7 @@ Presskit includes useful Jinja2 filters and functions:
 
 ## Changes
 
+- 0.0.6 - CLI upgrades, sources are now defined as a list in the config, smart reload only builds changed files
 - 0.0.5 - Filters and functions for Jinja2 templates, new `template_debug()` function for debugging templates
 - 0.0.4 - Bug fix for DuckDB data source to read relative paths correctly, DuckDB read-only mode, `--version` flag for CLI
 - 0.0.3 - `--reload` flag on build and server commands to watch for file changes and rebuild automatically
