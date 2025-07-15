@@ -86,19 +86,20 @@ class TestConfigFunctions:
         config_data = {
             "title": "Test Site",
             "content_dir": "content",
-            "sources": {
-                "db": {
+            "sources": [
+                {
+                    "name": "db",
                     "type": "sqlite",
                     "path": "data/test.db"
                 }
-            }
+            ]
         }
         config_file = tmp_path / "presskit.json"
         config_file.write_text(json.dumps(config_data))
         
         config = load_site_config(config_file)
         assert config.content_dir.is_absolute()
-        resolved_path = config.sources["db"].get_resolved_path(config.site_dir)
+        resolved_path = next(s for s in config.sources if s.name == "db").get_resolved_path(config.site_dir)
         assert resolved_path is not None and resolved_path.is_absolute()
 
 

@@ -46,7 +46,7 @@ class JSONSource(FileSource):
                     raise ConnectionError("JSON source requires 'path' configuration")
             else:
                 json_path = Path(self.config.path)
-                
+
             if not json_path.exists():
                 raise ConnectionError(f"JSON file not found: {json_path}")
 

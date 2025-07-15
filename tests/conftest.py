@@ -15,7 +15,7 @@ def sample_config() -> t.Dict[str, t.Any]:
         "url": "https://testsite.com",
         "version": "1.0.0",
         "language": "en-US",
-        "sources": {},
+        "sources": [],
         "queries": [],
         "variables": {},
         "default_source": None

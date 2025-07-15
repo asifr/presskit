@@ -40,10 +40,10 @@ class QueryProcessor:
                 metadata={
                     "generated": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "sources": {
-                        name: str(source_config.get_resolved_path(config.site_dir))
+                        source_config.name: str(source_config.get_resolved_path(config.site_dir))
                         if source_config.path
                         else f"{source_config.type}://{source_config.host or 'memory'}"
-                        for name, source_config in config.sources.items()
+                        for source_config in config.sources
                     },
                 },
                 queries={},
@@ -71,8 +71,8 @@ class QueryProcessor:
         logger.debug(f"Initializing {len(config.sources)} data sources...")
 
         connection_tasks = []
-        for source_name, source_config in config.sources.items():
-            task = self._initialize_source(source_name, source_config, config)
+        for source_config in config.sources:
+            task = self._initialize_source(source_config.name, source_config, config)
             connection_tasks.append(task)
 
         # Connect to all sources concurrently
@@ -93,18 +93,18 @@ class QueryProcessor:
 
     async def _process_file_sources(self, config: SiteConfig, cache_data: QueryCache) -> None:
         """Process file-based sources (JSON, etc.) and load their data."""
-        for source_name, source_config in config.sources.items():
-            if source_config.type == "json" and source_name in self._sources:
+        for source_config in config.sources:
+            if source_config.type == "json" and source_config.name in self._sources:
                 try:
-                    source = self._sources[source_name]
+                    source = self._sources[source_config.name]
                     if isinstance(source, FileSource):
                         data = await source.load_data()
-                        cache_data.data[source_name] = data
-                        logger.debug(f"Loaded data from JSON source: {source_name}")
+                        cache_data.data[source_config.name] = data
+                        logger.debug(f"Loaded data from JSON source: {source_config.name}")
                     else:
-                        logger.warning(f"Source '{source_name}' is not a FileSource, cannot load data")
+                        logger.warning(f"Source '{source_config.name}' is not a FileSource, cannot load data")
                 except Exception as e:
-                    logger.error(f"Failed to load data from source '{source_name}': {e}")
+                    logger.error(f"Failed to load data from source '{source_config.name}': {e}")
 
     async def _process_queries(self, config: SiteConfig, cache_data: QueryCache) -> None:
         """Process all queries concurrently."""
@@ -182,7 +182,7 @@ class QueryProcessor:
         parent_results = cache_data.queries.get(parent_name, [])
         if not parent_results:
             parent_results = cache_data.generators.get(parent_name, [])
-        
+
         if not parent_results:
             logger.warning(f"No parent results found for children of '{parent_name}'")
             return

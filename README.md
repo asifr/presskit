@@ -35,22 +35,26 @@ pip install presskit[duckdb]
 
 ## Quick Start
 
-1. Create a new site directory:
+1. Initialize a new Presskit project:
 ```bash
 mkdir my-site
 cd my-site
+presskit init
 ```
 
-2. Create the basic structure:
+This creates the basic structure and sample files:
 ```
 my-site/
 ├── presskit.json      # Configuration file
 ├── content/           # Markdown files
+│   └── index.md       # Sample homepage
 ├── templates/         # HTML templates
+│   ├── base.html      # Base template
+│   └── page.html      # Page template
 └── public/            # Generated output (created automatically)
 ```
 
-3. Build your site:
+2. Build your site:
 ```bash
 presskit build
 ```
@@ -508,6 +512,8 @@ You can create parent-child query relationships:
 }
 ```
 
+The `authors.posts` query will automatically run for each row returned by the `authors` query. The query has access to the parent row's data (e.g. `{{ id }}` column), allowing you to create nested structures.
+
 Access nested data in templates:
 
 ```html
@@ -517,6 +523,7 @@ Access nested data in templates:
     <p>{{ author.bio }}</p>
     
     <h3>Posts by {{ author.name }}</h3>
+    <!-- Nested data: Loop through posts for this author -->
     {% for post in author.posts %}
     <p><a href="/posts/{{ post.slug }}">{{ post.title }}</a> - {{ post.date }}</p>
     {% endfor %}
@@ -525,6 +532,18 @@ Access nested data in templates:
 ```
 
 ## Commands
+
+### Project Setup
+
+```bash
+# Initialize a new Presskit project
+presskit init
+```
+
+Creates the basic project structure with sample files including:
+- `presskit.json` configuration file
+- `content/` directory with sample `index.md`
+- `templates/` directory with `base.html` and `page.html`
 
 ### Build Commands
 
@@ -537,6 +556,9 @@ presskit build
 
 # Build specific file
 presskit build content/about.md
+
+# Build with auto-reload (watches for file changes)
+presskit build --reload
 
 # Generate pages from generator queries  
 presskit generate
@@ -553,8 +575,15 @@ Run `data` command before `build` or `generate` to ensure all queries are execut
 # Start development server
 presskit server
 
-# Clean build artifacts
+# Start development server with auto-reload
+# (automatically builds if output directory is empty)
+presskit server --reload
+
+# Clean build artifacts and cache
 presskit clean
+
+# List available data sources
+presskit sources
 ```
 
 ## Environment Variables

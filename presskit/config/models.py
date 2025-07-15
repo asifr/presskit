@@ -16,6 +16,7 @@ def get_num_workers() -> int:
 class SourceDefinition(BaseModel):
     """Definition of a data source with environment variable support."""
 
+    name: str = Field(..., description="Name of the data source")
     type: str = Field(..., description="Type of the data source")
 
     # Connection parameters
@@ -34,7 +35,7 @@ class SourceDefinition(BaseModel):
     def process_env_vars(self) -> "SourceDefinition":
         """Process environment variables in all string fields."""
         # Process direct fields
-        for field_name in ["host", "database", "username", "password", "path", "connection_string"]:
+        for field_name in ["name", "host", "database", "username", "password", "path", "connection_string"]:
             value = getattr(self, field_name)
             if value is not None:
                 setattr(self, field_name, EnvironmentLoader.load_env_value(value))
@@ -122,7 +123,7 @@ class SiteConfig(BaseModel):
     server_port: int = Field(default=8000, description="Development server port")
 
     # Data configuration
-    sources: Dict[str, SourceDefinition] = Field(default_factory=dict, description="Data sources")
+    sources: List[SourceDefinition] = Field(default_factory=list, description="Data sources")
     queries: List[QueryDefinition] = Field(default_factory=list, description="Query definitions")
     variables: Optional[Dict[str, Any]] = Field(None, description="Global variables")
     default_source: Optional[str] = Field(None, description="Default data source")

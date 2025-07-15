@@ -46,7 +46,7 @@ class SQLiteSource(QueryableSource):
                     raise ConnectionError("SQLite source requires 'path' configuration")
             else:
                 db_path = Path(self.config.path)
-            
+
             if not db_path.exists():
                 raise ConnectionError(f"SQLite database not found: {db_path}")
 

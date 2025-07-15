@@ -3,13 +3,11 @@ presskit - A static site generator for creating websites from markdown files and
 """
 
 import re
-import sys
 import json
 import yaml
 import string
 import random
 import asyncio
-import argparse
 import markdown
 import datetime
 import unicodedata
@@ -36,7 +34,6 @@ from presskit.config.models import (
 from presskit.core.query import QueryProcessor
 from presskit.sources.registry import get_registry
 from presskit.config.loader import EnvironmentLoader, ConfigError
-from presskit import __version__
 
 T = TypeVar("T")  # Type variables for generic functions
 _alphabet = string.ascii_lowercase + string.digits
@@ -905,17 +902,17 @@ def short_random_id(prefix: str = "", k: int = 8, seed: Optional[int] = None) ->
 def _template_debug_impl(context):
     """
     Generate a nicely formatted HTML display of all variables available to the template.
-    
+
     This function is intended for debugging Jinja2 templates by showing all available
     variables in a collapsible, formatted HTML structure.
-    
+
     Returns:
         HTML string containing formatted variable information
     """
     import html
     from datetime import datetime, date
     from markupsafe import Markup
-    
+
     def format_value(value, max_length=100):
         """Format a value for display, truncating if too long."""
         if value is None:
@@ -935,10 +932,10 @@ def _template_debug_impl(context):
                 # Show first 5 and last 5 items for large lists
                 first_items = [format_value(item, 50) for item in value[:5]]
                 last_items = [format_value(item, 50) for item in value[-5:]]
-                return f'<span class="array">[{", ".join(first_items)}, ... ({len(value)-10} more) ..., {", ".join(last_items)}]</span>'
+                return f'<span class="array">[{", ".join(first_items)}, ... ({len(value) - 10} more) ..., {", ".join(last_items)}]</span>'
             elif len(value) > 5:
                 items = [format_value(item, 50) for item in value[:5]]
-                return f'<span class="array">[{", ".join(items)}, ... ({len(value)-5} more)]</span>'
+                return f'<span class="array">[{", ".join(items)}, ... ({len(value) - 5} more)]</span>'
             else:
                 items = [format_value(item, 50) for item in value]
                 return f'<span class="array">[{", ".join(items)}]</span>'
@@ -948,10 +945,10 @@ def _template_debug_impl(context):
                 items_list = list(value.items())
                 first_items = [f'"{k}": {format_value(v, 50)}' for k, v in items_list[:5]]
                 last_items = [f'"{k}": {format_value(v, 50)}' for k, v in items_list[-5:]]
-                return f'<span class="object">{{ {", ".join(first_items)}, ... ({len(value)-10} more) ..., {", ".join(last_items)} }}</span>'
+                return f'<span class="object">{{ {", ".join(first_items)}, ... ({len(value) - 10} more) ..., {", ".join(last_items)} }}</span>'
             elif len(value) > 5:
                 items = [f'"{k}": {format_value(v, 50)}' for k, v in list(value.items())[:5]]
-                return f'<span class="object">{{ {", ".join(items)}, ... ({len(value)-5} more) }}</span>'
+                return f'<span class="object">{{ {", ".join(items)}, ... ({len(value) - 5} more) }}</span>'
             else:
                 items = [f'"{k}": {format_value(v, 50)}' for k, v in value.items()]
                 return f'<span class="object">{{ {", ".join(items)} }}</span>'
@@ -959,33 +956,33 @@ def _template_debug_impl(context):
             return f'<span class="date">{value.isoformat()}</span>'
         else:
             return f'<span class="other">{html.escape(str(type(value).__name__))}</span>'
-    
+
     def format_section(name, data, is_nested=False):
         """Format a section of variables."""
         if not data:
             return ""
-            
+
         indent = "  " if is_nested else ""
         html_parts = []
-        
+
         # Limit the number of items to prevent overwhelming output
         sorted_items = sorted(data.items())
-        
+
         if len(sorted_items) > 20:
             # Show first 10 and last 10 items for very large sections
             items_to_show = sorted_items[:10] + sorted_items[-10:]
             html_parts.append(f"{indent}<div><em>Showing first 10 and last 10 of {len(sorted_items)} items</em></div>")
-            
+
             for i, (key, value) in enumerate(items_to_show):
                 if i == 10:
-                    html_parts.append(f"{indent}<div><em>... ({len(sorted_items)-20} items omitted) ...</em></div>")
+                    html_parts.append(f"{indent}<div><em>... ({len(sorted_items) - 20} items omitted) ...</em></div>")
         elif len(sorted_items) > 10:
-            # Show first 10 items for moderately large sections  
+            # Show first 10 items for moderately large sections
             items_to_show = sorted_items[:10]
             html_parts.append(f"{indent}<div><em>Showing first 10 of {len(sorted_items)} items</em></div>")
         else:
             items_to_show = sorted_items
-            
+
         for key, value in items_to_show:
             if isinstance(value, dict) and len(value) > 0:
                 # Nested object - use details/summary
@@ -1002,36 +999,41 @@ def _template_debug_impl(context):
                 # Regular value
                 formatted_value = format_value(value)
                 html_parts.append(f"{indent}<div><strong>{key}:</strong> {formatted_value}</div>")
-        
+
         return "\n".join(html_parts)
-    
+
     # Get all template variables from the provided context
-    jinja_builtins = {'range', 'dict', 'list', 'namespace', 'cycler', 'joiner', 'lipsum', 'template_debug', 'short_random_id'}
-    template_vars = {k: v for k, v in context.items() if k not in jinja_builtins}
-    
-    # Group variables by category
-    categories = {
-        'site': {},
-        'build': {},
-        'page': {},
-        'data': {},
-        'other': {}
+    jinja_builtins = {
+        "range",
+        "dict",
+        "list",
+        "namespace",
+        "cycler",
+        "joiner",
+        "lipsum",
+        "template_debug",
+        "short_random_id",
     }
-    
+    template_vars = {k: v for k, v in context.items() if k not in jinja_builtins}
+
+    # Group variables by category
+    categories = {"site": {}, "build": {}, "page": {}, "data": {}, "other": {}}
+
     for key, value in template_vars.items():
-        if key.startswith('site'):
-            categories['site'][key] = value
-        elif key.startswith('build'):
-            categories['build'][key] = value
-        elif key.startswith('page'):
-            categories['page'][key] = value
-        elif key.startswith('data'):
-            categories['data'][key] = value
+        if key.startswith("site"):
+            categories["site"][key] = value
+        elif key.startswith("build"):
+            categories["build"][key] = value
+        elif key.startswith("page"):
+            categories["page"][key] = value
+        elif key.startswith("data"):
+            categories["data"][key] = value
         else:
-            categories['other'][key] = value
-    
+            categories["other"][key] = value
+
     # Generate HTML
-    html_parts = ["""
+    html_parts = [
+        """
     <div class="template-debug" style="
         background: #F5F5F5;
         border: 2px solid #dee2e6;
@@ -1076,8 +1078,9 @@ def _template_debug_impl(context):
             .template-debug summary:hover { background: rgba(193, 193, 193, 1); }
             .template-debug div { margin: 3px 0; }
         </style>
-    """]
-    
+    """
+    ]
+
     # Add each category
     for category_name, category_data in categories.items():
         if category_data:
@@ -1089,9 +1092,9 @@ def _template_debug_impl(context):
                 </div>
             </details>
             """)
-    
+
     html_parts.append("</div>")
-    
+
     return Markup("\n".join(html_parts))
 
 
@@ -1507,9 +1510,16 @@ def cmd_server(config: SiteConfig, reload: bool = False) -> bool:
     else:
         print("Starting server...")
 
-    # If public directory is empty, suggest building first
+    # If public directory is empty and reload is enabled, run initial build
     if not list(config.output_dir.glob("*")):
-        print_warning("Output directory is empty. Run 'presskit build' first.")
+        if reload:
+            print_warning("Output directory is empty. Running initial build...")
+            # Run initial build
+            if not cmd_build(config):
+                print_error("Initial build failed.")
+                return False
+        else:
+            print_warning("Output directory is empty. Run 'presskit build' first.")
 
     # Set up server
     host = config.server_host
@@ -1673,100 +1683,9 @@ def cmd_sources() -> bool:
         print("Installation examples:")
         print("  pip install presskit[postgresql]  # PostgreSQL support")
         print("  pip install presskit[duckdb]      # DuckDB support")
-        print("  pip install presskit[all-databases]  # All database sources")
 
         return True
 
     except Exception as e:
         print_error(f"Error listing sources: {e}")
         return False
-
-
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Static site generator",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-
-    # Global config argument
-    parser.add_argument(
-        "--config",
-        type=str,
-        help="Path to presskit.json config file (default: ./presskit.json)",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"presskit {__version__}",
-    )
-
-    subparsers = parser.add_subparsers(dest="command", help="Command to run")
-
-    # Build command
-    build_parser = subparsers.add_parser("build", help="Build the site")
-    build_parser.add_argument("file", nargs="?", help="Specific file to build (optional)")
-    build_parser.add_argument("--reload", action="store_true", help="Watch for changes and rebuild automatically")
-
-    # Data command
-    subparsers.add_parser("data", help="Execute all SQL queries and cache results")
-
-    # Status command
-    subparsers.add_parser("status", help="Show query cache status")
-
-    # Generate command
-    subparsers.add_parser("generate", help="Generate pages from generator queries")
-
-    # Server command
-    server_parser = subparsers.add_parser("server", help="Start a development server")
-    server_parser.add_argument("--reload", action="store_true", help="Watch for changes and rebuild automatically")
-
-    # Clean command
-    subparsers.add_parser("clean", help="Clean build artifacts and cache")
-
-    # Sources command
-    subparsers.add_parser("sources", help="List available data sources")
-
-    # Parse arguments
-    args = parser.parse_args()
-
-    # Find and load configuration
-    try:
-        config_path = find_config_file(args.config)
-        config = load_site_config(config_path)
-        print_info(f"Using config: {config_path}")
-    except (FileNotFoundError, ConfigError) as e:
-        print_error(str(e))
-        sys.exit(1)
-
-    # Route to appropriate command
-    try:
-        if args.command == "build":
-            return cmd_build(config, getattr(args, "file", None), getattr(args, "reload", False))
-        elif args.command == "data":
-            return cmd_data(config)
-        elif args.command == "status":
-            return cmd_data_status(config)
-        elif args.command == "generate":
-            return cmd_generate(config)
-        elif args.command == "server":
-            return cmd_server(config, getattr(args, "reload", False))
-        elif args.command == "clean":
-            return cmd_clean(config)
-        elif args.command == "sources":
-            return cmd_sources()
-        else:
-            parser.print_help()
-            sys.exit(1)
-    except KeyboardInterrupt:
-        print_error("Process interrupted by user")
-        sys.exit(1)
-    except FileNotFoundError as e:
-        print_error(f"File or directory not found: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print_error(f"Unexpected error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)

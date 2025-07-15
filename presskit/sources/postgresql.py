@@ -106,7 +106,7 @@ class PostgreSQLSource(DatabaseSource):
         """
         if not self._is_connected or not self._pool:
             raise ConnectionError("Database source is not connected")
-            
+
         async with self._pool.acquire() as connection:
             yield connection
 

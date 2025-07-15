@@ -15,12 +15,13 @@
     "workers": 8,
     "server_host": "0.0.0.0",
     "server_port": 8000,
-    "sources": {
-        "northwinds": {
+    "sources": [
+        {
+            "name": "northwinds",
             "type": "sqlite",
             "path": "./data/northwind.db"
         }
-    },
+    ],
     "queries": [
         {
             "name": "products",

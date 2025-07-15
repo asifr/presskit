@@ -32,16 +32,18 @@ class TestFullWorkflow:
             "author": "Test Author",
             "url": "https://testblog.com",
             "version": "1.0.0",
-            "sources": {
-                "blog_db": {
+            "sources": [
+                {
+                    "name": "blog_db",
                     "type": "sqlite",
                     "path": "data/blog.db"
                 },
-                "site_config": {
+                {
+                    "name": "site_config",
                     "type": "json",
                     "path": "data/config.json"
                 }
-            },
+            ],
             "default_source": "blog_db",
             "queries": [
                 {
@@ -345,12 +347,13 @@ class TestErrorHandling:
         
         config_data = {
             "title": "Test Site",
-            "sources": {
-                "db": {
+            "sources": [
+                {
+                    "name": "db",
                     "type": "sqlite",
                     "path": "data/test.db"
                 }
-            },
+            ],
             "queries": [
                 {
                     "name": "test",
@@ -411,12 +414,13 @@ Test content"""
         
         config_data = {
             "title": "Test Site",
-            "sources": {
-                "db": {
+            "sources": [
+                {
+                    "name": "db",
                     "type": "sqlite",
                     "path": "data/test.db"
                 }
-            },
+            ],
             "queries": [
                 {
                     "name": "bad_query",

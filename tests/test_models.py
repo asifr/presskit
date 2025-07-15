@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from presskit.models import (
+from presskit.config.models import (
     SiteConfig,
     SiteContext,
     BuildContext,
@@ -11,11 +11,9 @@ from presskit.models import (
     DataContext,
     TemplateContext,
     QueryCache,
-    get_num_workers,
-)
-from presskit.config.models import (
     SourceDefinition,
     QueryDefinition,
+    get_num_workers,
 )
 
 
@@ -35,6 +33,7 @@ class TestSourceDefinition:
     def test_sqlite_source(self) -> None:
         """Test creating SQLite source definition."""
         source = SourceDefinition(
+            name="testdb",
             type="sqlite",
             path="data/test.db"
         )
@@ -44,6 +43,7 @@ class TestSourceDefinition:
     def test_json_source(self) -> None:
         """Test creating JSON source definition."""
         source = SourceDefinition(
+            name="config",
             type="json",
             path="data/config.json"
         )
@@ -117,12 +117,13 @@ class TestSiteConfig:
             workers=4,
             server_host="localhost",
             server_port=3000,
-            sources={
-                "db": {
-                    "type": "sqlite",
-                    "path": "data/blog.db"
-                }
-            },
+            sources=[
+                SourceDefinition(
+                    name="db",
+                    type="sqlite",
+                    path="data/blog.db"
+                )
+            ],
             queries=[
                 {
                     "name": "posts",
@@ -135,7 +136,7 @@ class TestSiteConfig:
         )
         assert config.title == "My Blog"
         assert config.workers == 4
-        assert "db" in config.sources
+        assert any(source.name == "db" for source in config.sources)
         assert len(config.queries) == 1
         assert config.variables is not None and config.variables["theme"] == "dark"
         assert config.default_source == "db"
@@ -149,12 +150,13 @@ class TestSiteConfig:
             templates_dir=Path("templates"),
             output_dir=Path("public"),
             cache_dir=Path(".cache"),
-            sources={
-                "db": {
-                    "type": "sqlite",
-                    "path": "data/test.db"
-                }
-            }
+            sources=[
+                SourceDefinition(
+                    name="db",
+                    type="sqlite",
+                    path="data/test.db"
+                )
+            ]
         )
         
         # Resolve paths relative to config file
@@ -167,7 +169,7 @@ class TestSiteConfig:
         assert config.output_dir.is_absolute()
         assert config.cache_dir.is_absolute()
         # Check that source definition has resolved path when accessed through EnvironmentLoader
-        source_def = config.sources["db"]
+        source_def = next(s for s in config.sources if s.name == "db")
         if hasattr(source_def, 'get_resolved_path'):
             resolved_path = source_def.get_resolved_path(config.site_dir)
             assert resolved_path is not None and resolved_path.is_absolute()
