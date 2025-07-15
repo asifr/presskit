@@ -1,0 +1,377 @@
+{
+  "$defs": {
+    "QueryDefinition": {
+      "description": "Defines a query to execute against a data source.",
+      "properties": {
+        "name": {
+          "description": "Name of the query",
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "description": "Name of the source to query",
+          "title": "Source",
+          "type": "string"
+        },
+        "query": {
+          "description": "Query string (SQL, JSONPath, etc.)",
+          "title": "Query",
+          "type": "string"
+        },
+        "variables": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Variables for the query",
+          "title": "Variables"
+        },
+        "generator": {
+          "default": false,
+          "description": "Whether this is a generator query that creates multiple pages",
+          "title": "Generator",
+          "type": "boolean"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Template to use for the generated pages",
+          "title": "Template"
+        },
+        "output_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Output path for the generated pages",
+          "title": "Output Path"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "query"
+      ],
+      "title": "QueryDefinition",
+      "type": "object"
+    },
+    "SourceDefinition": {
+      "description": "Definition of a data source with environment variable support.",
+      "properties": {
+        "name": {
+          "description": "Name of the data source",
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "description": "Type of the data source",
+          "title": "Type",
+          "type": "string"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Database host",
+          "title": "Host"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Database port",
+          "title": "Port"
+        },
+        "database": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Database name",
+          "title": "Database"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Username",
+          "title": "Username"
+        },
+        "password": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Password",
+          "title": "Password"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "File path for file-based sources",
+          "title": "Path"
+        },
+        "connection_string": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Full connection string",
+          "title": "Connection String"
+        },
+        "options": {
+          "additionalProperties": true,
+          "description": "Source-specific configuration",
+          "title": "Options",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "SourceDefinition",
+      "type": "object"
+    }
+  },
+  "description": "Overall site configuration with environment variable support.",
+  "properties": {
+    "title": {
+      "default": "Presskit",
+      "description": "Name of the site",
+      "title": "Title",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Description of the site",
+      "title": "Description"
+    },
+    "author": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Author of the site",
+      "title": "Author"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Base URL of the site",
+      "title": "Url"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Version of the site",
+      "title": "Version"
+    },
+    "language": {
+      "default": "en-US",
+      "description": "Language of the site",
+      "title": "Language",
+      "type": "string"
+    },
+    "site_dir": {
+      "default": ".",
+      "description": "Base site directory",
+      "format": "path",
+      "title": "Site Dir",
+      "type": "string"
+    },
+    "content_dir": {
+      "default": "content",
+      "description": "Content directory",
+      "format": "path",
+      "title": "Content Dir",
+      "type": "string"
+    },
+    "templates_dir": {
+      "default": "templates",
+      "description": "Templates directory",
+      "format": "path",
+      "title": "Templates Dir",
+      "type": "string"
+    },
+    "output_dir": {
+      "default": "public",
+      "description": "Output directory",
+      "format": "path",
+      "title": "Output Dir",
+      "type": "string"
+    },
+    "cache_dir": {
+      "default": ".cache",
+      "description": "Cache directory",
+      "format": "path",
+      "title": "Cache Dir",
+      "type": "string"
+    },
+    "default_template": {
+      "default": "page",
+      "description": "Default template name",
+      "title": "Default Template",
+      "type": "string"
+    },
+    "markdown_extension": {
+      "default": "md",
+      "description": "Markdown file extension",
+      "title": "Markdown Extension",
+      "type": "string"
+    },
+    "workers": {
+      "description": "Number of worker threads",
+      "title": "Workers",
+      "type": "integer"
+    },
+    "server_host": {
+      "default": "0.0.0.0",
+      "description": "Development server host",
+      "title": "Server Host",
+      "type": "string"
+    },
+    "server_port": {
+      "default": 8000,
+      "description": "Development server port",
+      "title": "Server Port",
+      "type": "integer"
+    },
+    "sources": {
+      "description": "Data sources",
+      "items": {
+        "$ref": "#/$defs/SourceDefinition"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "queries": {
+      "description": "Query definitions",
+      "items": {
+        "$ref": "#/$defs/QueryDefinition"
+      },
+      "title": "Queries",
+      "type": "array"
+    },
+    "variables": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Global variables",
+      "title": "Variables"
+    },
+    "default_source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Default data source",
+      "title": "Default Source"
+    }
+  },
+  "title": "SiteConfig",
+  "type": "object"
+}

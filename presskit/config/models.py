@@ -184,6 +184,16 @@ class SiteConfig(BaseModel):
             self.cache_dir = self.site_dir / self.cache_dir
 
 
+def write_json_schema(output_path: Path) -> None:
+    """Write the JSON schema for SiteConfig to the specified output path."""
+    import json
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        schema = SiteConfig.model_json_schema()
+        json.dump(schema, f, indent=2, ensure_ascii=False)
+
+
 # Template Context Models (keeping existing structure)
 class SiteContext(BaseModel):
     """Site-wide configuration and metadata available in all templates."""

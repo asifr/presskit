@@ -1,6 +1,7 @@
 {
+    "$schema": "../../presskit.schema.json",
     "title": "Northwind Traders",
-    "description": "A sample application showcasing the Northwind database with a modern web interface.",
+    "description": "A sample application showcasing the Northwind database.",
     "author": "Northwind Team",
     "url": "http://localhost:8000",
     "version": "1.0.0",
@@ -72,7 +73,7 @@
         {
             "name": "allcategories.products",
             "source": "northwinds",
-            "query": "SELECT * FROM Products WHERE CategoryID = {{CategoryID}}"
+            "query": "SELECT * FROM Products WHERE CategoryID = {{ CategoryID }}"
         }
     ]
 }
