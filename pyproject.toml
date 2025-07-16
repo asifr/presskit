@@ -58,8 +58,6 @@ presskit = "presskit.cli:main_cli"
 [project.entry-points."presskit.sources"]
 sqlite = "presskit.sources.sqlite:SQLiteSource"
 json = "presskit.sources.json:JSONSource"
-postgresql = "presskit.sources.postgresql:PostgreSQLSource"
-duckdb = "presskit.sources.duckdb:DuckDBSource"
 
 # Include the JSON files in the package var directory
 [tool.setuptools.package-data]

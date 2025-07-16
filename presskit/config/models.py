@@ -213,7 +213,7 @@ def write_json_schema(output_path: Path) -> None:
         json.dump(schema, f, indent=2, ensure_ascii=False)
 
 
-# Template Context Models (keeping existing structure)
+# Template Context Models
 class SiteContext(BaseModel):
     """Site-wide configuration and metadata available in all templates."""
 

@@ -22,6 +22,8 @@ else:
 # Default built-in plugins that are always loaded
 DEFAULT_PLUGINS = (
     "presskit.contrib.livereload",
+    "presskit.contrib.sources.duckdb",
+    "presskit.contrib.sources.postgresql",
 )
 
 # Create the plugin manager

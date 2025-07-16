@@ -1,5 +1,32 @@
 {
   "$defs": {
+    "PluginConfig": {
+      "description": "Plugin configuration.",
+      "properties": {
+        "name": {
+          "description": "Plugin name or import path",
+          "title": "Name",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether the plugin is enabled",
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "options": {
+          "additionalProperties": true,
+          "description": "Plugin-specific options",
+          "title": "Options",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PluginConfig",
+      "type": "object"
+    },
     "QueryDefinition": {
       "description": "Defines a query to execute against a data source.",
       "properties": {
@@ -370,6 +397,22 @@
       "default": null,
       "description": "Default data source",
       "title": "Default Source"
+    },
+    "plugins": {
+      "description": "Plugin configurations",
+      "items": {
+        "$ref": "#/$defs/PluginConfig"
+      },
+      "title": "Plugins",
+      "type": "array"
+    },
+    "plugin_directories": {
+      "description": "Directories to search for plugins",
+      "items": {
+        "type": "string"
+      },
+      "title": "Plugin Directories",
+      "type": "array"
     }
   },
   "title": "SiteConfig",

@@ -197,8 +197,8 @@ class FileSource(DataSource):
 class DatabaseSource(QueryableSource):
     """Abstract base class for database sources with connection pooling."""
 
-    def __init__(self, config: SourceDefinition):
-        super().__init__(config)
+    def __init__(self, config: SourceDefinition, site_dir=None):
+        super().__init__(config, site_dir)
         self._pool: t.Optional[Any] = None
 
     @abstractmethod
