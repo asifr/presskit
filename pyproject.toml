@@ -27,6 +27,7 @@ dependencies = [
     "jsonpath-ng>=1.6.0",
     "watchfiles>=0.23.0",
     "typer>=0.9.0",
+    "pluggy>=1.6.0",
 ]
 [project.urls]
 Homepage = "https://github.com/asifr/presskit"

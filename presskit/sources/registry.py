@@ -3,6 +3,7 @@
 import logging
 import importlib
 import importlib.metadata
+from pathlib import Path
 from typing import Dict, List, Type, Any, Optional
 
 from presskit.sources.base import DataSource, SourceError
@@ -221,6 +222,34 @@ def get_registry() -> SourceRegistry:
     global _registry
     if _registry is None:
         _registry = SourceRegistry()
+        
+        # Call plugin hooks to register custom data sources
+        try:
+            from presskit.plugins import call_hook
+            from presskit.hookspecs import PressskitContext
+            
+            # Create a minimal context for data source registration
+            context = PressskitContext(
+                config={},
+                build_dir=Path("."),
+                content_dir=Path("."),
+                template_dir=Path(".")
+            )
+            
+            # Call register_data_sources hook
+            for result in call_hook('register_data_sources', context=context):
+                if isinstance(result, dict):
+                    for source_name, source_class in result.items():
+                        try:
+                            _registry.register_source(source_name, source_class)
+                        except Exception as e:
+                            logger.warning(f"Failed to register data source {source_name}: {e}")
+        except ImportError:
+            # Plugin system not available
+            pass
+        except Exception as e:
+            logger.warning(f"Error loading plugin data sources: {e}")
+    
     return _registry
 
 

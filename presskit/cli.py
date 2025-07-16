@@ -22,6 +22,8 @@ from presskit.press import (
 )
 from presskit.config.loader import ConfigError
 from presskit.utils import print_error, print_info, print_success
+from presskit.plugins import call_hook, load_plugins_from_directory, load_plugin_from_path, get_plugins
+from presskit.press import create_presskit_context
 
 
 app = typer.Typer(
@@ -29,6 +31,76 @@ app = typer.Typer(
     help="Static site generator",
     add_completion=False,
 )
+
+# Load plugins at import time for command registration
+def _load_plugins_for_commands():
+    """Load plugins for command registration at import time."""
+    try:
+        config_path = find_config_file()
+        if config_path.exists():
+            config = load_site_config(config_path)
+            
+            # Load plugins from directories
+            for plugin_dir in config.plugin_directories:
+                resolved_dir = config.site_dir / plugin_dir if not Path(plugin_dir).is_absolute() else Path(plugin_dir)
+                load_plugins_from_directory(str(resolved_dir))
+            
+            # Load configured plugins
+            for plugin_config in config.plugins:
+                if plugin_config.enabled:
+                    try:
+                        plugin_path = Path(plugin_config.name)
+                        if plugin_path.exists():
+                            load_plugin_from_path(str(plugin_path))
+                    except Exception:
+                        pass
+            
+            # Register plugin commands
+            call_hook('register_commands', cli=app)
+    except Exception:
+        # Silently ignore errors during plugin loading for command registration
+        pass
+
+# Load plugins for command registration
+_load_plugins_for_commands()
+
+
+def load_config_with_plugins(config_file: t.Optional[str] = None):
+    """Load site configuration and call startup hooks."""
+    try:
+        config_path = find_config_file(config_file)
+        config = load_site_config(config_path)
+        
+        # Load plugins from directories
+        for plugin_dir in config.plugin_directories:
+            resolved_dir = config.site_dir / plugin_dir if not Path(plugin_dir).is_absolute() else Path(plugin_dir)
+            load_plugins_from_directory(str(resolved_dir))
+        
+        # Load configured plugins
+        for plugin_config in config.plugins:
+            if plugin_config.enabled:
+                try:
+                    # Try to load as a file path first, then as a module
+                    plugin_path = Path(plugin_config.name)
+                    if plugin_path.exists():
+                        load_plugin_from_path(str(plugin_path))
+                    else:
+                        # Load as a module (will be handled by setuptools entry points)
+                        pass
+                except Exception as e:
+                    print_error(f"Failed to load plugin {plugin_config.name}: {e}")
+        
+        # Call startup hooks
+        presskit_context = create_presskit_context(config)
+        call_hook('startup', context=presskit_context)
+        
+        # Register plugin commands after plugins are loaded
+        call_hook('register_commands', cli=app)
+        
+        return config
+    except ConfigError as e:
+        print_error(f"Configuration error: {e}")
+        raise typer.Exit(1)
 
 
 def version_callback(value: bool):
@@ -221,9 +293,8 @@ def build(
 ):
     """Build the site."""
     try:
-        config_path = find_config_file(config)
-        site_config = load_site_config(config_path)
-        print_info(f"Using config: {config_path}")
+        site_config = load_config_with_plugins(config)
+        print_info(f"Using config: {find_config_file(config)}")
 
         success = cmd_build(site_config, file, reload, smart_reload=not disable_smart_reload)
         if not success:
@@ -415,6 +486,40 @@ def sources():
         import traceback
 
         traceback.print_exc()
+        raise typer.Exit(1)
+
+
+@app.command()
+def plugins(
+    config: Annotated[
+        t.Optional[str],
+        typer.Option("--config", help="Path to presskit.json config file"),
+    ] = None,
+):
+    """List loaded plugins."""
+    try:
+        load_config_with_plugins(config)
+        plugins_list = get_plugins()
+        
+        if not plugins_list:
+            print_info("No plugins loaded.")
+            return
+        
+        print_success(f"Loaded {len(plugins_list)} plugin(s):")
+        for plugin in plugins_list:
+            print(f"  - {plugin['name']}")
+            if plugin.get('version'):
+                print(f"    Version: {plugin['version']}")
+            if plugin.get('hooks'):
+                print(f"    Hooks: {', '.join(plugin['hooks'])}")
+            if plugin.get('static_path'):
+                print(f"    Static path: {plugin['static_path']}")
+            if plugin.get('templates_path'):
+                print(f"    Templates path: {plugin['templates_path']}")
+            print()
+            
+    except (FileNotFoundError, ConfigError) as e:
+        print_error(str(e))
         raise typer.Exit(1)
 
 

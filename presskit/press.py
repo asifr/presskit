@@ -35,10 +35,41 @@ from presskit.core.query import QueryProcessor
 from presskit.sources.registry import get_registry
 from presskit.config.loader import EnvironmentLoader, ConfigError
 from presskit.reload import SmartReloader, Dependencies
+from presskit.plugins import call_hook
+from presskit.hookspecs import (
+    PressskitContext,
+    FileContext,
+    ContentContext,
+    BuildContext as PluginBuildContext
+)
 
 T = TypeVar("T")  # Type variables for generic functions
 _alphabet = string.ascii_lowercase + string.digits
 CLEANR = re.compile("<.*?>|&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-f]{1,6});")
+
+
+# Plugin Context Helpers
+def create_presskit_context(config: SiteConfig) -> PressskitContext:
+    """Create a PressskitContext from site configuration."""
+    return PressskitContext(
+        config=config.model_dump(),
+        build_dir=config.output_dir,
+        content_dir=config.content_dir,
+        template_dir=config.templates_dir
+    )
+
+
+def create_file_context(file_path: Path, config: SiteConfig, file_type: str = "content") -> FileContext:
+    """Create a FileContext for file processing."""
+    presskit_context = create_presskit_context(config)
+    relative_path = file_path.relative_to(config.content_dir if file_type == "content" else config.site_dir)
+    
+    return FileContext(
+        file_path=file_path,
+        relative_path=relative_path,
+        file_type=file_type,
+        presskit=presskit_context
+    )
 
 
 # Context Builder Functions
@@ -399,12 +430,28 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
     try:
         print(f"Building: {file_path}")
 
+        # Call pre_process_file hook
+        file_context = create_file_context(file_path, config, "content")
+        call_hook('pre_process_file', context=file_context)
+
         # Read file content
         with open(file_path, "r") as f:
             content = f.read()
 
         # Extract front matter, content, and queries
         front_matter, md_content, md_queries = extract_front_matter(content)
+        
+        # Call plugin hooks for frontmatter processing
+        content_context = ContentContext(
+            content=md_content,
+            frontmatter=front_matter,
+            file_context=file_context
+        )
+        
+        # Call process_frontmatter hook
+        for result in call_hook('process_frontmatter', context=content_context):
+            if result is not None:
+                front_matter = result
 
         # Process markdown file's queries if any
         page_query_results = {}
@@ -432,16 +479,42 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
         template_context = TemplateContext(
             site=site_ctx, build=build_ctx, page=page_ctx, data=data_ctx, extras=front_matter
         )
+        
+        # Call extra_template_vars hook
+        from presskit.hookspecs import TemplateContext as PluginTemplateContext
+        plugin_template_context = PluginTemplateContext(
+            template_path=None,
+            template_vars=template_context.to_template_vars(),
+            presskit=create_presskit_context(config)
+        )
+        
+        extra_vars = {}
+        for result in call_hook('extra_template_vars', context=plugin_template_context):
+            if isinstance(result, dict):
+                extra_vars.update(result)
+        
+        # Add extra template variables
+        if extra_vars:
+            template_context.extras.update(extra_vars)
 
         # Process markdown content with context
-        html_content = process_markdown(md_content, template_context.to_template_vars(), config.content_dir)
+        html_content = process_markdown(md_content, template_context.to_template_vars(), config.content_dir, config, file_path)
 
         # Update page context with processed content
         template_context.page.content = html_content
+        
+        # Call prepare_page_context hook
+        from presskit.hookspecs import PageContext as PluginPageContext
+        plugin_page_context = PluginPageContext(
+            page_data=template_context.page.__dict__,
+            template_vars=template_context.to_template_vars(),
+            file_context=file_context
+        )
+        call_hook('prepare_page_context', context=plugin_page_context)
 
         # Process HTML template
         output_html = process_template(
-            template_context.page.layout, template_context.to_template_vars(), config.templates_dir
+            template_context.page.layout, template_context.to_template_vars(), config.templates_dir, config
         )
 
         # Determine output path
@@ -454,16 +527,55 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
         with open(output_file, "w") as f:
             f.write(output_html)
 
+        # Call post_process_file hook
+        call_hook('post_process_file', context=file_context, output_path=output_file)
+
         print_success(f"Built: {output_file}")
         return True
     except (FileNotFoundError, IOError) as e:
         print_error(f"File error processing {file_path}: {e}")
         return False
     except TemplateError as e:
-        print_error(f"Template error processing {file_path}: {e}")
+        # Call handle_template_error hook
+        from presskit.hookspecs import ErrorContext
+        error_context = ErrorContext(
+            error=e,
+            file_path=file_path,
+            template_path=None,
+            context_data={"message": str(e)},
+            presskit=create_presskit_context(config)
+        )
+        
+        # Check if any plugin handled the error
+        handled = False
+        for result in call_hook('handle_template_error', context=error_context):
+            if result is True:
+                handled = True
+                break
+        
+        if not handled:
+            print_error(f"Template error processing {file_path}: {e}")
         return False
     except Exception as e:
-        print_error(f"Unexpected error processing {file_path}: {e}")
+        # Call handle_build_error hook
+        from presskit.hookspecs import ErrorContext
+        error_context = ErrorContext(
+            error=e,
+            file_path=file_path,
+            template_path=None,
+            context_data={"message": str(e)},
+            presskit=create_presskit_context(config)
+        )
+        
+        # Check if any plugin handled the error
+        handled = False
+        for result in call_hook('handle_build_error', context=error_context):
+            if result is True:
+                handled = True
+                break
+        
+        if not handled:
+            print_error(f"Unexpected error processing {file_path}: {e}")
         return False
 
 
@@ -694,7 +806,7 @@ def process_specific_generators(
                 )
 
                 # Process the template
-                output_html = process_template(template_name, template_context.to_template_vars(), config.templates_dir)
+                output_html = process_template(template_name, template_context.to_template_vars(), config.templates_dir, config)
 
                 # Write output file
                 output_file = config.output_dir / f"{actual_path}.html"
@@ -809,7 +921,7 @@ def process_generators(config: SiteConfig) -> bool:
                 )
 
                 # Process the template
-                output_html = process_template(template_name, template_context.to_template_vars(), config.templates_dir)
+                output_html = process_template(template_name, template_context.to_template_vars(), config.templates_dir, config)
 
                 # Write output file
                 output_file = config.output_dir / f"{actual_path}.html"
@@ -1371,7 +1483,7 @@ def process_sql_template(sql_query: str, variables: Dict[str, Any]) -> str:
         raise TemplateRenderingError(f"Error processing SQL template: {e}")
 
 
-def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Path) -> str:
+def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Path, config: Optional[SiteConfig] = None, file_path: Optional[Path] = None) -> str:
     """
     Process markdown content with Jinja2 templating and convert to HTML.
 
@@ -1401,6 +1513,20 @@ def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Pa
 
         # Render template with variables
         processed_md = template.render(**variables)
+        
+        # Call plugin hooks for markdown processing
+        if config and file_path:
+            file_context = create_file_context(file_path, config, "content")
+            content_context = ContentContext(
+                content=processed_md,
+                frontmatter=variables.get("page", {}),
+                file_context=file_context
+            )
+            
+            # Call process_markdown hook
+            for result in call_hook('process_markdown', context=content_context):
+                if result is not None:
+                    processed_md = result
 
         # Convert markdown to HTML
         html_content = markdown.markdown(
@@ -1432,7 +1558,7 @@ def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Pa
 # Legacy markdown query processing removed - using new async QueryProcessor.process_markdown_queries
 
 
-def process_template(template_name: str, variables: Dict[str, Any], templates_dir: Path) -> str:
+def process_template(template_name: str, variables: Dict[str, Any], templates_dir: Path, config: Optional[SiteConfig] = None) -> str:
     """
     Process an HTML template with Jinja2.
 
@@ -1456,6 +1582,25 @@ def process_template(template_name: str, variables: Dict[str, Any], templates_di
         )
         env.filters.update(JINJA_FILTERS)
         env.globals.update(JINJA_GLOBALS)
+        
+        # Call plugin hooks for Jinja2 environment preparation
+        if config:
+            presskit_context = create_presskit_context(config)
+            call_hook('prepare_jinja2_environment', env=env, context=presskit_context)
+            
+            # Get custom filters and functions from plugins
+            custom_filters = {}
+            custom_functions = {}
+            for result in call_hook('custom_jinja_filters', context=presskit_context):
+                if isinstance(result, dict):
+                    custom_filters.update(result)
+            
+            for result in call_hook('custom_jinja_functions', context=presskit_context):
+                if isinstance(result, dict):
+                    custom_functions.update(result)
+            
+            env.filters.update(custom_filters)
+            env.globals.update(custom_functions)
 
         # Mark content variable as safe HTML if it exists
         if "page" in variables and "content" in variables["page"]:
@@ -1572,6 +1717,9 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
     Returns:
         True if successful, False otherwise
     """
+    # Call pre-build hooks
+    presskit_context = create_presskit_context(config)
+    call_hook('pre_build', context=presskit_context)
     if reload:
         smart_reloader = SmartReloader(config, enabled=smart_reload)
         print("Building with auto-reload enabled...")
@@ -1733,6 +1881,13 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
     if not file and query_cache and "generators" in query_cache:
         process_generators(config)
 
+    # Call post-build hooks
+    build_context = PluginBuildContext(
+        build_results={"success": build_success, "file_count": len(files) if 'files' in locals() else 0},
+        presskit=presskit_context
+    )
+    call_hook('post_build', context=build_context)
+    
     if build_success:
         print_success("Build complete!")
     else:

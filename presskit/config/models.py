@@ -63,6 +63,21 @@ class SourceDefinition(BaseModel):
         return path_obj
 
 
+class PluginConfig(BaseModel):
+    """Plugin configuration."""
+
+    name: str = Field(..., description="Plugin name or import path")
+    enabled: bool = Field(True, description="Whether the plugin is enabled")
+    options: Dict[str, Any] = Field(default_factory=dict, description="Plugin-specific options")
+
+    @model_validator(mode="after")
+    def process_env_vars(self) -> "PluginConfig":
+        """Process environment variables in plugin configuration."""
+        self.name = EnvironmentLoader.load_env_value(self.name)
+        self.options = EnvironmentLoader.process_config(self.options)
+        return self
+
+
 class QueryDefinition(BaseModel):
     """Defines a query to execute against a data source."""
 
@@ -127,6 +142,10 @@ class SiteConfig(BaseModel):
     queries: List[QueryDefinition] = Field(default_factory=list, description="Query definitions")
     variables: Optional[Dict[str, Any]] = Field(None, description="Global variables")
     default_source: Optional[str] = Field(None, description="Default data source")
+
+    # Plugin configuration
+    plugins: List[PluginConfig] = Field(default_factory=list, description="Plugin configurations")
+    plugin_directories: List[str] = Field(default_factory=list, description="Directories to search for plugins")
 
     @model_validator(mode="after")
     def process_env_vars_and_resolve_paths(self) -> "SiteConfig":
