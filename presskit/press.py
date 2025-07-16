@@ -1937,6 +1937,18 @@ def cmd_server(config: SiteConfig, reload: bool = False, smart_reload: bool = Tr
     # Create server
     server = http.server.ThreadingHTTPServer((host, port), handler)
 
+    # Call server_start hook
+    from presskit.hookspecs import ServerContext
+    presskit_context = create_presskit_context(config)
+    server_context = ServerContext(
+        host=host,
+        port=port,
+        reload=reload,
+        smart_reload=smart_reload,
+        presskit=presskit_context
+    )
+    call_hook('server_start', context=server_context)
+
     print_success(f"Server running at http://{host}:{port}/")
     print("Press Ctrl+C to stop.")
 

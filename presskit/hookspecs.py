@@ -67,11 +67,25 @@ class ErrorContext(BaseModel):
     presskit: PressskitContext
 
 
+class ServerContext(BaseModel):
+    """Context for server operations."""
+    host: str
+    port: int
+    reload: bool
+    smart_reload: bool
+    presskit: PressskitContext
+
+
 # Configuration and Startup Hooks
 
 @hookspec
 def startup(context: PressskitContext):
     """Fires directly after Presskit starts running."""
+
+
+@hookspec
+def server_start(context: ServerContext):
+    """Fires when the development server starts."""
 
 
 # Content Processing Hooks

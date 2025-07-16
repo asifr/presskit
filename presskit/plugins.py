@@ -5,8 +5,8 @@ import sys
 import pluggy
 import importlib
 from pprint import pprint
+from presskit import hookspecs
 from typing import Dict, List, Any, Optional
-from . import hookspecs
 
 if sys.version_info >= (3, 9):
     import importlib.resources as importlib_resources
@@ -21,10 +21,7 @@ else:
 
 # Default built-in plugins that are always loaded
 DEFAULT_PLUGINS = (
-    # Core plugins would go here when implemented
-    # "presskit.plugins.markdown_extensions",
-    # "presskit.plugins.asset_processors", 
-    # "presskit.plugins.dev_server",
+    "presskit.contrib.livereload",
 )
 
 # Create the plugin manager
