@@ -1,12 +1,11 @@
 """
-CLI interface for presskit using typer.
+CLI interface for presskit using click.
 """
 
 import json
-import typer
+import click
 import typing as t
 from pathlib import Path
-from typing_extensions import Annotated
 
 from presskit import __version__
 from presskit.press import (
@@ -26,11 +25,16 @@ from presskit.plugins import call_hook, load_plugins_from_directory, load_plugin
 from presskit.press import create_presskit_context
 
 
-app = typer.Typer(
-    name="presskit",
-    help="Static site generator",
-    add_completion=False,
-)
+@click.group()
+@click.version_option(version=__version__, prog_name="presskit")
+@click.pass_context
+def app(ctx):
+    """Presskit - A powerful static site generator.
+    
+    Combines Markdown content with Jinja2 templating and database-driven page generation.
+    It allows building dynamic static sites by connecting content to SQLite databases and JSON data sources.
+    """
+    ctx.ensure_object(dict)
 
 # Load plugins at import time for command registration
 def _load_plugins_for_commands():
@@ -100,50 +104,33 @@ def load_config_with_plugins(config_file: t.Optional[str] = None):
         return config
     except ConfigError as e:
         print_error(f"Configuration error: {e}")
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
-def version_callback(value: bool):
-    """Show version and exit."""
-    if value:
-        typer.echo(f"presskit {__version__}")
-        raise typer.Exit()
-
-
-@app.callback(invoke_without_command=True)
-def main(
-    ctx: typer.Context,
-    _version: Annotated[
-        t.Optional[bool],
-        typer.Option("--version", callback=version_callback, help="Show version and exit"),
-    ] = None,
-):
-    """
-    Presskit - A powerful static site generator.
-
-    Combines Markdown content with Jinja2 templating and database-driven page generation.
-    It allows building dynamic static sites by connecting content to SQLite databases and JSON data sources.
-    """
-    if ctx.invoked_subcommand is None:
-        typer.echo(ctx.get_help())
-        ctx.exit(0)
 
 
 @app.command()
-def init():
+@click.argument('directory', required=False)
+def init(directory: t.Optional[str] = None):
     """Initialize a new Presskit project."""
-    current_dir = Path.cwd()
+    if directory:
+        target_dir = Path(directory).resolve()
+        # Create the directory if it doesn't exist
+        target_dir.mkdir(parents=True, exist_ok=True)
+        current_dir = target_dir
+    else:
+        current_dir = Path.cwd()
 
     # Create directories if they don't exist
     templates_dir = current_dir / "templates"
     content_dir = current_dir / "content"
 
-    for directory in [templates_dir, content_dir]:
-        if not directory.exists():
-            directory.mkdir(parents=True, exist_ok=True)
-            print_success(f"Created directory: {directory}")
+    for dir_path in [templates_dir, content_dir]:
+        if not dir_path.exists():
+            dir_path.mkdir(parents=True, exist_ok=True)
+            print_success(f"Created directory: {dir_path}")
         else:
-            print_info(f"Directory already exists: {directory}")
+            print_info(f"Directory already exists: {dir_path}")
 
     # Create presskit.json if it doesn't exist
     config_file = current_dir / "presskit.json"
@@ -273,24 +260,15 @@ Happy building! 🚀
 
 
 @app.command()
-def build(
-    file: Annotated[
-        t.Optional[str],
-        typer.Argument(help="Specific file to build (optional)"),
-    ] = None,
-    reload: Annotated[
-        bool,
-        typer.Option("--reload", help="Watch for changes and rebuild automatically"),
-    ] = False,
-    disable_smart_reload: Annotated[
-        bool,
-        typer.Option("--disable-smart-reload", help="Rebuild everything on change"),
-    ] = False,
-    config: Annotated[
-        t.Optional[str],
-        typer.Option("--config", help="Path to presskit.json config file"),
-    ] = None,
-):
+@click.argument('file', required=False)
+@click.option('--reload', is_flag=True, 
+    help="Watch for changes and rebuild automatically")
+@click.option('--disable-smart-reload', is_flag=True, 
+    help="Rebuild everything on change")
+@click.option('--config', 
+    help="Path to presskit.json config file")
+def build(file: t.Optional[str] = None, reload: bool = False, 
+          disable_smart_reload: bool = False, config: t.Optional[str] = None):
     """Build the site."""
     try:
         site_config = load_config_with_plugins(config)
@@ -298,28 +276,24 @@ def build(
 
         success = cmd_build(site_config, file, reload, smart_reload=not disable_smart_reload)
         if not success:
-            raise typer.Exit(1)
+            raise click.Abort()
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise click.Abort()
     except KeyboardInterrupt:
         print_error("Process interrupted by user")
-        raise typer.Exit(1)
+        raise click.Abort()
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
 
         traceback.print_exc()
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 @app.command()
-def data(
-    config: Annotated[
-        t.Optional[str],
-        typer.Option("--config", help="Path to presskit.json config file"),
-    ] = None,
-):
+@click.option('--config', help="Path to presskit.json config file")
+def data(config: t.Optional[str] = None):
     """Execute all SQL queries and cache results."""
     try:
         config_path = find_config_file(config)
@@ -328,28 +302,24 @@ def data(
 
         success = cmd_data(site_config)
         if not success:
-            raise typer.Exit(1)
+            raise click.Abort()
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise click.Abort()
     except KeyboardInterrupt:
         print_error("Process interrupted by user")
-        raise typer.Exit(1)
+        raise click.Abort()
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
 
         traceback.print_exc()
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 @app.command()
-def status(
-    config: Annotated[
-        t.Optional[str],
-        typer.Option("--config", help="Path to presskit.json config file"),
-    ] = None,
-):
+@click.option('--config', help="Path to presskit.json config file")
+def status(config: t.Optional[str] = None):
     """Show query cache status."""
     try:
         config_path = find_config_file(config)
@@ -358,28 +328,24 @@ def status(
 
         success = cmd_data_status(site_config)
         if not success:
-            raise typer.Exit(1)
+            raise click.Abort()
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise click.Abort()
     except KeyboardInterrupt:
         print_error("Process interrupted by user")
-        raise typer.Exit(1)
+        raise click.Abort()
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
 
         traceback.print_exc()
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 @app.command()
-def generate(
-    config: Annotated[
-        t.Optional[str],
-        typer.Option("--config", help="Path to presskit.json config file"),
-    ] = None,
-):
+@click.option('--config', help="Path to presskit.json config file")
+def generate(config: t.Optional[str] = None):
     """Generate pages from generator queries."""
     try:
         config_path = find_config_file(config)
@@ -388,36 +354,26 @@ def generate(
 
         success = cmd_generate(site_config)
         if not success:
-            raise typer.Exit(1)
+            raise click.Abort()
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise click.Abort()
     except KeyboardInterrupt:
         print_error("Process interrupted by user")
-        raise typer.Exit(1)
+        raise click.Abort()
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
 
         traceback.print_exc()
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 @app.command()
-def server(
-    reload: Annotated[
-        bool,
-        typer.Option("--reload", help="Watch for changes and rebuild automatically"),
-    ] = False,
-    disable_smart_reload: Annotated[
-        bool,
-        typer.Option("--disable-smart-reload", help="Rebuild everything on change"),
-    ] = False,
-    config: Annotated[
-        t.Optional[str],
-        typer.Option("--config", help="Path to presskit.json config file"),
-    ] = None,
-):
+@click.option('--reload', is_flag=True, help="Watch for changes and rebuild automatically")
+@click.option('--disable-smart-reload', is_flag=True, help="Rebuild everything on change")
+@click.option('--config', help="Path to presskit.json config file")
+def server(reload: bool = False, disable_smart_reload: bool = False, config: t.Optional[str] = None):
     """Start a development server."""
     try:
         config_path = find_config_file(config)
@@ -426,28 +382,24 @@ def server(
 
         success = cmd_server(site_config, reload, smart_reload=not disable_smart_reload)
         if not success:
-            raise typer.Exit(1)
+            raise click.Abort()
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise click.Abort()
     except KeyboardInterrupt:
         print_error("Process interrupted by user")
-        raise typer.Exit(1)
+        raise click.Abort()
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
 
         traceback.print_exc()
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 @app.command()
-def clean(
-    config: Annotated[
-        t.Optional[str],
-        typer.Option("--config", help="Path to presskit.json config file"),
-    ] = None,
-):
+@click.option('--config', help="Path to presskit.json config file")
+def clean(config: t.Optional[str] = None):
     """Clean build artifacts and cache."""
     try:
         config_path = find_config_file(config)
@@ -456,19 +408,19 @@ def clean(
 
         success = cmd_clean(site_config)
         if not success:
-            raise typer.Exit(1)
+            raise click.Abort()
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise click.Abort()
     except KeyboardInterrupt:
         print_error("Process interrupted by user")
-        raise typer.Exit(1)
+        raise click.Abort()
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
 
         traceback.print_exc()
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 @app.command()
@@ -477,25 +429,21 @@ def sources():
     try:
         success = cmd_sources()
         if not success:
-            raise typer.Exit(1)
+            raise click.Abort()
     except KeyboardInterrupt:
         print_error("Process interrupted by user")
-        raise typer.Exit(1)
+        raise click.Abort()
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
 
         traceback.print_exc()
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 @app.command()
-def plugins(
-    config: Annotated[
-        t.Optional[str],
-        typer.Option("--config", help="Path to presskit.json config file"),
-    ] = None,
-):
+@click.option('--config', help="Path to presskit.json config file")
+def plugins(config: t.Optional[str] = None):
     """List loaded plugins."""
     try:
         load_config_with_plugins(config)
@@ -520,7 +468,7 @@ def plugins(
             
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise click.Abort()
 
 
 def main_cli():
