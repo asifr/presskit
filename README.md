@@ -61,11 +61,11 @@ presskit build
 
 ## Basic Usage
 
-### Writing Markdown Content
+### Writing Content with Frontmatter
 
 Create Markdown files in the `content/` directory. Each file can include YAML front matter for metadata:
 
-```
+```markdown
 ---
 title: "Welcome to My Site"
 description: "A brief introduction"
@@ -75,6 +75,20 @@ layout: page
 # Welcome
 
 This is my **awesome** site built with Presskit!
+```
+
+HTML files also support YAML frontmatter:
+
+```html
+---
+title: "My HTML Page"
+description: "A page with frontmatter"
+layout: custom
+---
+<div class="content">
+    <h1>{{ title }}</h1>
+    <p>{{ description }}</p>
+</div>
 ```
 
 ### Creating HTML Templates
@@ -531,6 +545,62 @@ Access nested data in templates:
 {% endfor %}
 ```
 
+## Frontmatter Data Sources
+
+In addition to configuring data sources in `presskit.json`, you can define data sources directly in the YAML frontmatter of individual files. This is particularly useful for standalone files or page-specific data.
+
+### Frontmatter Sources Syntax
+
+```markdown
+---
+title: My Page
+description: A page with embedded data sources
+sources:
+    users:
+        type: json
+        path: data/users.json
+    books:
+        type: json
+        path: books.json
+---
+
+# {{ title }}
+
+## Users
+{% for user in data.sources.users %}
+- {{ user.name }} ({{ user.email }})
+{% endfor %}
+
+## Books  
+{% for book in data.sources.books %}
+- **{{ book.title }}** by {{ book.author }}
+{% endfor %}
+```
+
+### Path Resolution
+
+Frontmatter source paths are resolved in the following order:
+
+1. **Relative to the input file's directory** (primary)
+2. **Relative to current working directory** (fallback)
+3. **Absolute paths** (if specified)
+
+This means if you have a file at `content/posts/article.md` with a frontmatter source path `data.json`, it will look for:
+1. `content/posts/data.json` first
+2. `./data.json` (current working directory) if the first doesn't exist
+
+### Combining Sources
+
+Frontmatter sources work alongside:
+- Sources defined in `presskit.json` (for full site builds)
+- Command-line sources via `--source` flag (for standalone compilation)
+- All sources are merged and available in templates via `data.sources.*`
+
+### Supported Source Types
+
+Currently, frontmatter sources support:
+- **JSON files** (`type: json`) - Load JSON data from files
+
 ## Commands
 
 ### Project Setup
@@ -584,6 +654,83 @@ presskit clean
 
 # List available data sources
 presskit sources
+```
+
+### Standalone Compilation
+
+The `compile` command allows you to compile individual Markdown or HTML files without requiring a full Presskit project setup. This is perfect for creating standalone pages, documentation, or one-off content.
+
+```bash
+# Compile a single Markdown file
+presskit compile page.md
+
+# Compile HTML file with custom output path
+presskit compile page.html --output result.html
+
+# Compile with JSON data sources
+presskit compile article.md --source users.json --source products.json
+
+# Compile with custom template and config
+presskit compile page.md --template custom.html --config site.json
+
+# Compile HTML with frontmatter sources (sources defined in the file itself)
+presskit compile standalone.html
+```
+
+#### Compile Command Options
+
+- `--source` - JSON data source files (can be used multiple times)
+- `--template` - Template file to use (overrides frontmatter layout)
+- `--output` - Custom output HTML file path
+- `--config` - Path to presskit.json config file (optional)
+
+#### How Compilation Works
+
+1. **File Processing**:
+   - Markdown files: Process frontmatter → Jinja2 → Markdown → HTML → Template
+   - HTML files: Process frontmatter → Jinja2 → Template (optional)
+
+2. **Data Sources**:
+   - Command-line sources (`--source file.json`)
+   - Frontmatter sources (defined in YAML frontmatter)
+   - All sources available via `data.sources.*` in templates
+
+3. **Template Resolution**:
+   - Uses `layout` from frontmatter or `--template` override
+   - Searches in `templates/` directory (if config exists) or same directory as input file
+   - Falls back to content-only if template not found
+
+4. **Context Available**:
+   - All standard Presskit template variables (`site.*`, `build.*`, `page.*`, `data.*`)
+   - Frontmatter variables available at top level
+   - Minimal defaults used when no config file present
+
+#### Standalone Examples
+
+**Simple Markdown with data:**
+```bash
+# users.json contains: [{"name": "Alice", "email": "alice@example.com"}]
+presskit compile article.md --source users.json
+```
+
+**HTML with frontmatter sources:**
+```html
+---
+title: Product Showcase
+sources:
+    products:
+        type: json
+        path: products.json
+---
+<h1>{{ title }}</h1>
+{% for product in data.sources.products %}
+<div>{{ product.name }}: ${{ product.price }}</div>
+{% endfor %}
+```
+
+**Using custom templates:**
+```bash
+presskit compile content.md --template newsletter.html --output newsletter.html
 ```
 
 ## Environment Variables
@@ -802,7 +949,7 @@ Presskit includes useful Jinja2 filters and functions:
 
 ## Changes
 
-- Unreleased - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument
+- Unreleased - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument, new `compile` command for standalone file compilation, frontmatter support for HTML files, frontmatter data sources support
 - 0.0.6 - CLI upgrades, sources are now defined as a list in the config, smart reload only builds changed files
 - 0.0.5 - Filters and functions for Jinja2 templates, new `template_debug()` function for debugging templates
 - 0.0.4 - Bug fix for DuckDB data source to read relative paths correctly, DuckDB read-only mode, `--version` flag for CLI

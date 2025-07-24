@@ -18,6 +18,7 @@ from presskit.press import (
     cmd_server,
     cmd_clean,
     cmd_sources,
+    cmd_compile,
 )
 from presskit.config.loader import ConfigError
 from presskit.utils import print_error, print_info, print_success
@@ -30,11 +31,12 @@ from presskit.press import create_presskit_context
 @click.pass_context
 def app(ctx):
     """Presskit - A powerful static site generator.
-    
+
     Combines Markdown content with Jinja2 templating and database-driven page generation.
     It allows building dynamic static sites by connecting content to SQLite databases and JSON data sources.
     """
     ctx.ensure_object(dict)
+
 
 # Load plugins at import time for command registration
 def _load_plugins_for_commands():
@@ -43,12 +45,12 @@ def _load_plugins_for_commands():
         config_path = find_config_file()
         if config_path.exists():
             config = load_site_config(config_path)
-            
+
             # Load plugins from directories
             for plugin_dir in config.plugin_directories:
                 resolved_dir = config.site_dir / plugin_dir if not Path(plugin_dir).is_absolute() else Path(plugin_dir)
                 load_plugins_from_directory(str(resolved_dir))
-            
+
             # Load configured plugins
             for plugin_config in config.plugins:
                 if plugin_config.enabled:
@@ -58,12 +60,13 @@ def _load_plugins_for_commands():
                             load_plugin_from_path(str(plugin_path))
                     except Exception:
                         pass
-            
+
             # Register plugin commands
-            call_hook('register_commands', cli=app)
+            call_hook("register_commands", cli=app)
     except Exception:
         # Silently ignore errors during plugin loading for command registration
         pass
+
 
 # Load plugins for command registration
 _load_plugins_for_commands()
@@ -74,12 +77,12 @@ def load_config_with_plugins(config_file: t.Optional[str] = None):
     try:
         config_path = find_config_file(config_file)
         config = load_site_config(config_path)
-        
+
         # Load plugins from directories
         for plugin_dir in config.plugin_directories:
             resolved_dir = config.site_dir / plugin_dir if not Path(plugin_dir).is_absolute() else Path(plugin_dir)
             load_plugins_from_directory(str(resolved_dir))
-        
+
         # Load configured plugins
         for plugin_config in config.plugins:
             if plugin_config.enabled:
@@ -93,24 +96,22 @@ def load_config_with_plugins(config_file: t.Optional[str] = None):
                         pass
                 except Exception as e:
                     print_error(f"Failed to load plugin {plugin_config.name}: {e}")
-        
+
         # Call startup hooks
         presskit_context = create_presskit_context(config)
-        call_hook('startup', context=presskit_context)
-        
+        call_hook("startup", context=presskit_context)
+
         # Register plugin commands after plugins are loaded
-        call_hook('register_commands', cli=app)
-        
+        call_hook("register_commands", cli=app)
+
         return config
     except ConfigError as e:
         print_error(f"Configuration error: {e}")
         raise click.Abort()
 
 
-
-
 @app.command()
-@click.argument('directory', required=False)
+@click.argument("directory", required=False)
 def init(directory: t.Optional[str] = None):
     """Initialize a new Presskit project."""
     if directory:
@@ -260,15 +261,16 @@ Happy building! 🚀
 
 
 @app.command()
-@click.argument('file', required=False)
-@click.option('--reload', is_flag=True, 
-    help="Watch for changes and rebuild automatically")
-@click.option('--disable-smart-reload', is_flag=True, 
-    help="Rebuild everything on change")
-@click.option('--config', 
-    help="Path to presskit.json config file")
-def build(file: t.Optional[str] = None, reload: bool = False, 
-          disable_smart_reload: bool = False, config: t.Optional[str] = None):
+@click.argument("file", required=False)
+@click.option("--reload", is_flag=True, help="Watch for changes and rebuild automatically")
+@click.option("--disable-smart-reload", is_flag=True, help="Rebuild everything on change")
+@click.option("--config", help="Path to presskit.json config file")
+def build(
+    file: t.Optional[str] = None,
+    reload: bool = False,
+    disable_smart_reload: bool = False,
+    config: t.Optional[str] = None,
+):
     """Build the site."""
     try:
         site_config = load_config_with_plugins(config)
@@ -292,7 +294,7 @@ def build(file: t.Optional[str] = None, reload: bool = False,
 
 
 @app.command()
-@click.option('--config', help="Path to presskit.json config file")
+@click.option("--config", help="Path to presskit.json config file")
 def data(config: t.Optional[str] = None):
     """Execute all SQL queries and cache results."""
     try:
@@ -318,7 +320,7 @@ def data(config: t.Optional[str] = None):
 
 
 @app.command()
-@click.option('--config', help="Path to presskit.json config file")
+@click.option("--config", help="Path to presskit.json config file")
 def status(config: t.Optional[str] = None):
     """Show query cache status."""
     try:
@@ -344,7 +346,7 @@ def status(config: t.Optional[str] = None):
 
 
 @app.command()
-@click.option('--config', help="Path to presskit.json config file")
+@click.option("--config", help="Path to presskit.json config file")
 def generate(config: t.Optional[str] = None):
     """Generate pages from generator queries."""
     try:
@@ -370,9 +372,9 @@ def generate(config: t.Optional[str] = None):
 
 
 @app.command()
-@click.option('--reload', is_flag=True, help="Watch for changes and rebuild automatically")
-@click.option('--disable-smart-reload', is_flag=True, help="Rebuild everything on change")
-@click.option('--config', help="Path to presskit.json config file")
+@click.option("--reload", is_flag=True, help="Watch for changes and rebuild automatically")
+@click.option("--disable-smart-reload", is_flag=True, help="Rebuild everything on change")
+@click.option("--config", help="Path to presskit.json config file")
 def server(reload: bool = False, disable_smart_reload: bool = False, config: t.Optional[str] = None):
     """Start a development server."""
     try:
@@ -398,7 +400,7 @@ def server(reload: bool = False, disable_smart_reload: bool = False, config: t.O
 
 
 @app.command()
-@click.option('--config', help="Path to presskit.json config file")
+@click.option("--config", help="Path to presskit.json config file")
 def clean(config: t.Optional[str] = None):
     """Clean build artifacts and cache."""
     try:
@@ -442,30 +444,72 @@ def sources():
 
 
 @app.command()
-@click.option('--config', help="Path to presskit.json config file")
+@click.argument("file", required=True)
+@click.option("--source", multiple=True, help="JSON data source files")
+@click.option("--template", help="Template file to use (default: use file's layout from frontmatter)")
+@click.option("--output", help="Output HTML file path")
+@click.option("--config", help="Path to presskit.json config file (optional)")
+def compile(
+    file: str,
+    source: t.Tuple[str, ...],
+    template: t.Optional[str] = None,
+    output: t.Optional[str] = None,
+    config: t.Optional[str] = None,
+):
+    """Compile a single Markdown or HTML file with Jinja templating.
+
+    Supports compiling individual files with custom data sources and templates.
+
+    \b
+    presskit compile page.md
+    presskit compile page.html --template base.html --output out.html
+    presskit compile page.md --source data.json --source users.json
+    """
+    try:
+        success = cmd_compile(
+            file_path=file, sources=list(source), template_override=template, output_path=output, config_file=config
+        )
+        if not success:
+            raise click.Abort()
+    except (FileNotFoundError, ConfigError) as e:
+        print_error(str(e))
+        raise click.Abort()
+    except KeyboardInterrupt:
+        print_error("Process interrupted by user")
+        raise click.Abort()
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        raise click.Abort()
+
+
+@app.command()
+@click.option("--config", help="Path to presskit.json config file")
 def plugins(config: t.Optional[str] = None):
     """List loaded plugins."""
     try:
         load_config_with_plugins(config)
         plugins_list = get_plugins()
-        
+
         if not plugins_list:
             print_info("No plugins loaded.")
             return
-        
+
         print_success(f"Loaded {len(plugins_list)} plugin(s):")
         for plugin in plugins_list:
             print(f"  - {plugin['name']}")
-            if plugin.get('version'):
+            if plugin.get("version"):
                 print(f"    Version: {plugin['version']}")
-            if plugin.get('hooks'):
+            if plugin.get("hooks"):
                 print(f"    Hooks: {', '.join(plugin['hooks'])}")
-            if plugin.get('static_path'):
+            if plugin.get("static_path"):
                 print(f"    Static path: {plugin['static_path']}")
-            if plugin.get('templates_path'):
+            if plugin.get("templates_path"):
                 print(f"    Templates path: {plugin['templates_path']}")
             print()
-            
+
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
         raise click.Abort()

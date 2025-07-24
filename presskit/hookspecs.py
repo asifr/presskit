@@ -11,8 +11,10 @@ hookimpl = HookimplMarker("presskit")
 
 # Context Models for Hook Parameters
 
+
 class PressskitContext(BaseModel):
     """Base context for all Presskit operations."""
+
     config: t.Dict[str, t.Any]
     build_dir: Path
     content_dir: Path
@@ -21,6 +23,7 @@ class PressskitContext(BaseModel):
 
 class FileContext(BaseModel):
     """Context for file processing operations."""
+
     file_path: Path
     relative_path: Path
     file_type: str
@@ -29,6 +32,7 @@ class FileContext(BaseModel):
 
 class ContentContext(BaseModel):
     """Context for content processing."""
+
     content: str
     frontmatter: t.Dict[str, t.Any]
     file_context: FileContext
@@ -36,6 +40,7 @@ class ContentContext(BaseModel):
 
 class PageContext(BaseModel):
     """Context for page rendering."""
+
     page_data: t.Dict[str, t.Any]
     template_vars: t.Dict[str, t.Any]
     file_context: FileContext
@@ -43,6 +48,7 @@ class PageContext(BaseModel):
 
 class TemplateContext(BaseModel):
     """Context for template operations."""
+
     template_path: t.Optional[Path] = None
     template_vars: t.Dict[str, t.Any]
     presskit: PressskitContext
@@ -50,6 +56,7 @@ class TemplateContext(BaseModel):
 
 class BuildContext(BaseModel):
     """Context for build operations."""
+
     build_results: t.Dict[str, t.Any]
     start_time: t.Optional[float] = None
     end_time: t.Optional[float] = None
@@ -58,8 +65,9 @@ class BuildContext(BaseModel):
 
 class ErrorContext(BaseModel):
     """Context for error handling."""
+
     model_config = {"arbitrary_types_allowed": True}
-    
+
     error: Exception
     file_path: t.Optional[Path] = None
     template_path: t.Optional[Path] = None
@@ -69,6 +77,7 @@ class ErrorContext(BaseModel):
 
 class ServerContext(BaseModel):
     """Context for server operations."""
+
     host: str
     port: int
     reload: bool
@@ -77,6 +86,7 @@ class ServerContext(BaseModel):
 
 
 # Configuration and Startup Hooks
+
 
 @hookspec
 def startup(context: PressskitContext):
@@ -89,6 +99,7 @@ def server_start(context: ServerContext):
 
 
 # Content Processing Hooks
+
 
 @hookspec
 def process_markdown(context: ContentContext):
@@ -106,6 +117,7 @@ def prepare_page_context(context: PageContext):
 
 
 # Template System Hooks
+
 
 @hookspec
 def prepare_jinja2_environment(env: t.Any, context: PressskitContext):
@@ -129,12 +141,14 @@ def custom_jinja_functions(context: PressskitContext):
 
 # Data Source Hooks
 
+
 @hookspec
 def register_data_sources(context: PressskitContext):
     """Register custom data source types - return dict of {type_name: source_class}."""
 
 
 # Build Process Hooks
+
 
 @hookspec
 def pre_build(context: PressskitContext):
@@ -158,12 +172,14 @@ def post_process_file(context: FileContext, output_path: Path):
 
 # CLI Extension Hooks
 
+
 @hookspec
 def register_commands(cli: t.Any):
     """Register additional CLI commands."""
 
 
 # Error Handling Hooks
+
 
 @hookspec
 def handle_build_error(context: ErrorContext):

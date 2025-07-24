@@ -66,9 +66,7 @@ if not hasattr(sys, "_called_from_test") and PRESSKIT_LOAD_PLUGINS is None:
 
 # Load specific plugins if PRESSKIT_LOAD_PLUGINS is set
 if PRESSKIT_LOAD_PLUGINS is not None:
-    for package_name in [
-        name for name in PRESSKIT_LOAD_PLUGINS.split(",") if name.strip()
-    ]:
+    for package_name in [name for name in PRESSKIT_LOAD_PLUGINS.split(",") if name.strip()]:
         try:
             distribution = importlib_metadata.distribution(package_name)
             entry_points = distribution.entry_points
@@ -96,51 +94,47 @@ def get_plugins() -> List[Dict[str, Any]]:
     """Get information about all loaded plugins."""
     plugins = []
     plugin_to_distinfo = dict(pm.list_plugin_distinfo())
-    
+
     for plugin in pm.get_plugins():
         static_path = None
         templates_path = None
-        
+
         # Check for static and template directories in external plugins
         if plugin.__name__ not in DEFAULT_PLUGINS:
             try:
                 if (importlib_resources.files(plugin.__name__) / "static").is_dir():
-                    static_path = str(
-                        importlib_resources.files(plugin.__name__) / "static"
-                    )
+                    static_path = str(importlib_resources.files(plugin.__name__) / "static")
                 if (importlib_resources.files(plugin.__name__) / "templates").is_dir():
-                    templates_path = str(
-                        importlib_resources.files(plugin.__name__) / "templates"
-                    )
+                    templates_path = str(importlib_resources.files(plugin.__name__) / "templates")
             except (TypeError, ModuleNotFoundError):
                 # Plugins loaded from directories may not have importlib resources
                 pass
-        
+
         plugin_info = {
             "name": plugin.__name__,
             "static_path": static_path,
             "templates_path": templates_path,
             "hooks": [h.name for h in (pm.get_hookcallers(plugin) or [])],
         }
-        
+
         # Add distribution info if available
         distinfo = plugin_to_distinfo.get(plugin)
         if distinfo:
             plugin_info["version"] = distinfo.version
             plugin_info["name"] = distinfo.name or distinfo.project_name
-        
+
         plugins.append(plugin_info)
-    
+
     return plugins
 
 
 def load_plugin_from_path(plugin_path: str, plugin_name: Optional[str] = None) -> None:
     """Load a plugin from a file path."""
     import importlib.util
-    
+
     if plugin_name is None:
         plugin_name = os.path.splitext(os.path.basename(plugin_path))[0]
-    
+
     spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
     if spec and spec.loader:
         module = importlib.util.module_from_spec(spec)
@@ -153,9 +147,9 @@ def load_plugins_from_directory(plugins_dir: str) -> None:
     """Load all Python files from a plugins directory."""
     if not os.path.isdir(plugins_dir):
         return
-    
+
     for filename in os.listdir(plugins_dir):
-        if filename.endswith('.py') and not filename.startswith('_'):
+        if filename.endswith(".py") and not filename.startswith("_"):
             plugin_path = os.path.join(plugins_dir, filename)
             try:
                 load_plugin_from_path(plugin_path)

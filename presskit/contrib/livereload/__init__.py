@@ -32,7 +32,7 @@ def is_livereload_enabled() -> bool:
 
 
 # Livereload JavaScript that will be injected into HTML pages
-LIVERELOAD_SCRIPT = '''
+LIVERELOAD_SCRIPT = """
 <script>
 // Livereload script - watches current page and all loaded resources
 let watching = new Set();
@@ -76,7 +76,7 @@ function watch(urlString) {
   setInterval(check, 1000);
 }
 </script>
-'''
+"""
 
 
 @hookimpl
@@ -94,36 +94,37 @@ def post_process_file(context: FileContext, output_path: Path) -> None:
     """Inject livereload script into HTML files when livereload is enabled."""
     if not is_livereload_enabled():
         return
-    
+
     # Only process HTML files
-    if not output_path.suffix.lower() == '.html':
+    if not output_path.suffix.lower() == ".html":
         return
-    
+
     try:
         # Read the HTML file
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, "r", encoding="utf-8") as f:
             html_content = f.read()
-        
+
         # Check if the file already contains the livereload script
-        if 'watching = new Set();' in html_content:
+        if "watching = new Set();" in html_content:
             return
-        
+
         # Inject the livereload script before the closing </body> tag
-        if '</body>' in html_content:
+        if "</body>" in html_content:
             # Insert the script just before </body>
-            html_content = html_content.replace('</body>', f'{LIVERELOAD_SCRIPT}\n</body>')
-        elif '</html>' in html_content:
+            html_content = html_content.replace("</body>", f"{LIVERELOAD_SCRIPT}\n</body>")
+        elif "</html>" in html_content:
             # Fallback: insert before </html> if no </body> tag
-            html_content = html_content.replace('</html>', f'{LIVERELOAD_SCRIPT}\n</html>')
+            html_content = html_content.replace("</html>", f"{LIVERELOAD_SCRIPT}\n</html>")
         else:
             # Fallback: append to end if no closing tags found
             html_content = html_content + LIVERELOAD_SCRIPT
-        
+
         # Write the modified HTML back to the file
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-            
+
     except Exception as e:
         # Don't fail the build if livereload injection fails
         import sys
+
         print(f"Warning: Failed to inject livereload script into {output_path}: {e}", file=sys.stderr)

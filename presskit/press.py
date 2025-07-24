@@ -36,12 +36,7 @@ from presskit.sources.registry import get_registry
 from presskit.config.loader import EnvironmentLoader, ConfigError
 from presskit.reload import SmartReloader, Dependencies
 from presskit.plugins import call_hook
-from presskit.hookspecs import (
-    PressskitContext,
-    FileContext,
-    ContentContext,
-    BuildContext as PluginBuildContext
-)
+from presskit.hookspecs import PressskitContext, FileContext, ContentContext, BuildContext as PluginBuildContext
 
 T = TypeVar("T")  # Type variables for generic functions
 _alphabet = string.ascii_lowercase + string.digits
@@ -55,7 +50,7 @@ def create_presskit_context(config: SiteConfig) -> PressskitContext:
         config=config.model_dump(),
         build_dir=config.output_dir,
         content_dir=config.content_dir,
-        template_dir=config.templates_dir
+        template_dir=config.templates_dir,
     )
 
 
@@ -63,13 +58,8 @@ def create_file_context(file_path: Path, config: SiteConfig, file_type: str = "c
     """Create a FileContext for file processing."""
     presskit_context = create_presskit_context(config)
     relative_path = file_path.relative_to(config.content_dir if file_type == "content" else config.site_dir)
-    
-    return FileContext(
-        file_path=file_path,
-        relative_path=relative_path,
-        file_type=file_type,
-        presskit=presskit_context
-    )
+
+    return FileContext(file_path=file_path, relative_path=relative_path, file_type=file_type, presskit=presskit_context)
 
 
 # Context Builder Functions
@@ -397,7 +387,7 @@ def build_file_with_tracking(
             with open(file_path, "r") as f:
                 content = f.read()
 
-            front_matter, _, md_queries = extract_front_matter(content)
+            front_matter, _, md_queries, _ = extract_front_matter(content)
 
             # Create dependencies
             deps = Dependencies(
@@ -432,24 +422,20 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
 
         # Call pre_process_file hook
         file_context = create_file_context(file_path, config, "content")
-        call_hook('pre_process_file', context=file_context)
+        call_hook("pre_process_file", context=file_context)
 
         # Read file content
         with open(file_path, "r") as f:
             content = f.read()
 
         # Extract front matter, content, and queries
-        front_matter, md_content, md_queries = extract_front_matter(content)
-        
+        front_matter, md_content, md_queries, md_sources = extract_front_matter(content)
+
         # Call plugin hooks for frontmatter processing
-        content_context = ContentContext(
-            content=md_content,
-            frontmatter=front_matter,
-            file_context=file_context
-        )
-        
+        content_context = ContentContext(content=md_content, frontmatter=front_matter, file_context=file_context)
+
         # Call process_frontmatter hook
-        for result in call_hook('process_frontmatter', context=content_context):
+        for result in call_hook("process_frontmatter", context=content_context):
             if result is not None:
                 front_matter = result
 
@@ -479,38 +465,42 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
         template_context = TemplateContext(
             site=site_ctx, build=build_ctx, page=page_ctx, data=data_ctx, extras=front_matter
         )
-        
+
         # Call extra_template_vars hook
         from presskit.hookspecs import TemplateContext as PluginTemplateContext
+
         plugin_template_context = PluginTemplateContext(
             template_path=None,
             template_vars=template_context.to_template_vars(),
-            presskit=create_presskit_context(config)
+            presskit=create_presskit_context(config),
         )
-        
+
         extra_vars = {}
-        for result in call_hook('extra_template_vars', context=plugin_template_context):
+        for result in call_hook("extra_template_vars", context=plugin_template_context):
             if isinstance(result, dict):
                 extra_vars.update(result)
-        
+
         # Add extra template variables
         if extra_vars:
             template_context.extras.update(extra_vars)
 
         # Process markdown content with context
-        html_content = process_markdown(md_content, template_context.to_template_vars(), config.content_dir, config, file_path)
+        html_content = process_markdown(
+            md_content, template_context.to_template_vars(), config.content_dir, config, file_path
+        )
 
         # Update page context with processed content
         template_context.page.content = html_content
-        
+
         # Call prepare_page_context hook
         from presskit.hookspecs import PageContext as PluginPageContext
+
         plugin_page_context = PluginPageContext(
             page_data=template_context.page.__dict__,
             template_vars=template_context.to_template_vars(),
-            file_context=file_context
+            file_context=file_context,
         )
-        call_hook('prepare_page_context', context=plugin_page_context)
+        call_hook("prepare_page_context", context=plugin_page_context)
 
         # Process HTML template
         output_html = process_template(
@@ -528,7 +518,7 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
             f.write(output_html)
 
         # Call post_process_file hook
-        call_hook('post_process_file', context=file_context, output_path=output_file)
+        call_hook("post_process_file", context=file_context, output_path=output_file)
 
         print_success(f"Built: {output_file}")
         return True
@@ -538,42 +528,44 @@ def build_file(file_path: Path, query_cache: Optional[Dict[str, Any]], config: S
     except TemplateError as e:
         # Call handle_template_error hook
         from presskit.hookspecs import ErrorContext
+
         error_context = ErrorContext(
             error=e,
             file_path=file_path,
             template_path=None,
             context_data={"message": str(e)},
-            presskit=create_presskit_context(config)
+            presskit=create_presskit_context(config),
         )
-        
+
         # Check if any plugin handled the error
         handled = False
-        for result in call_hook('handle_template_error', context=error_context):
+        for result in call_hook("handle_template_error", context=error_context):
             if result is True:
                 handled = True
                 break
-        
+
         if not handled:
             print_error(f"Template error processing {file_path}: {e}")
         return False
     except Exception as e:
         # Call handle_build_error hook
         from presskit.hookspecs import ErrorContext
+
         error_context = ErrorContext(
             error=e,
             file_path=file_path,
             template_path=None,
             context_data={"message": str(e)},
-            presskit=create_presskit_context(config)
+            presskit=create_presskit_context(config),
         )
-        
+
         # Check if any plugin handled the error
         handled = False
-        for result in call_hook('handle_build_error', context=error_context):
+        for result in call_hook("handle_build_error", context=error_context):
             if result is True:
                 handled = True
                 break
-        
+
         if not handled:
             print_error(f"Unexpected error processing {file_path}: {e}")
         return False
@@ -806,7 +798,9 @@ def process_specific_generators(
                 )
 
                 # Process the template
-                output_html = process_template(template_name, template_context.to_template_vars(), config.templates_dir, config)
+                output_html = process_template(
+                    template_name, template_context.to_template_vars(), config.templates_dir, config
+                )
 
                 # Write output file
                 output_file = config.output_dir / f"{actual_path}.html"
@@ -921,7 +915,9 @@ def process_generators(config: SiteConfig) -> bool:
                 )
 
                 # Process the template
-                output_html = process_template(template_name, template_context.to_template_vars(), config.templates_dir, config)
+                output_html = process_template(
+                    template_name, template_context.to_template_vars(), config.templates_dir, config
+                )
 
                 # Write output file
                 output_file = config.output_dir / f"{actual_path}.html"
@@ -1083,18 +1079,19 @@ def data_status(config: SiteConfig) -> None:
         print("Run 'presskit data' to execute queries and create cache.")
 
 
-def extract_front_matter(content: str) -> tuple[Dict[str, Any], str, Dict[str, Any]]:
+def extract_front_matter(content: str) -> tuple[Dict[str, Any], str, Dict[str, Any], Dict[str, Any]]:
     """
-    Extract YAML front matter from a markdown file.
+    Extract YAML front matter from a markdown or HTML file.
 
     Args:
         content: File content with optional YAML front matter
 
     Returns:
-        Tuple of (front_matter, content_without_fm, queries)
+        Tuple of (front_matter, content_without_fm, queries, sources)
     """
     front_matter: Dict[str, Any] = {}
     queries: Dict[str, Any] = {}
+    sources: Dict[str, Any] = {}
     content_without_fm = content
 
     # Check for front matter
@@ -1107,10 +1104,14 @@ def extract_front_matter(content: str) -> tuple[Dict[str, Any], str, Dict[str, A
             # Extract queries if they exist in front matter
             if "queries" in front_matter:
                 queries = front_matter.pop("queries")
+            
+            # Extract sources if they exist in front matter
+            if "sources" in front_matter:
+                sources = front_matter.pop("sources")
         except yaml.YAMLError as e:
             print_error(f"Error parsing front matter: {e}")
 
-    return front_matter, content_without_fm, queries
+    return front_matter, content_without_fm, queries, sources
 
 
 def date_format(value: str, format: str) -> str:
@@ -1483,7 +1484,13 @@ def process_sql_template(sql_query: str, variables: Dict[str, Any]) -> str:
         raise TemplateRenderingError(f"Error processing SQL template: {e}")
 
 
-def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Path, config: Optional[SiteConfig] = None, file_path: Optional[Path] = None) -> str:
+def process_markdown(
+    md_content: str,
+    variables: Dict[str, Any],
+    content_dir: Path,
+    config: Optional[SiteConfig] = None,
+    file_path: Optional[Path] = None,
+) -> str:
     """
     Process markdown content with Jinja2 templating and convert to HTML.
 
@@ -1513,18 +1520,16 @@ def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Pa
 
         # Render template with variables
         processed_md = template.render(**variables)
-        
+
         # Call plugin hooks for markdown processing
         if config and file_path:
             file_context = create_file_context(file_path, config, "content")
             content_context = ContentContext(
-                content=processed_md,
-                frontmatter=variables.get("page", {}),
-                file_context=file_context
+                content=processed_md, frontmatter=variables.get("page", {}), file_context=file_context
             )
-            
+
             # Call process_markdown hook
-            for result in call_hook('process_markdown', context=content_context):
+            for result in call_hook("process_markdown", context=content_context):
                 if result is not None:
                     processed_md = result
 
@@ -1558,7 +1563,9 @@ def process_markdown(md_content: str, variables: Dict[str, Any], content_dir: Pa
 # Legacy markdown query processing removed - using new async QueryProcessor.process_markdown_queries
 
 
-def process_template(template_name: str, variables: Dict[str, Any], templates_dir: Path, config: Optional[SiteConfig] = None) -> str:
+def process_template(
+    template_name: str, variables: Dict[str, Any], templates_dir: Path, config: Optional[SiteConfig] = None
+) -> str:
     """
     Process an HTML template with Jinja2.
 
@@ -1582,23 +1589,23 @@ def process_template(template_name: str, variables: Dict[str, Any], templates_di
         )
         env.filters.update(JINJA_FILTERS)
         env.globals.update(JINJA_GLOBALS)
-        
+
         # Call plugin hooks for Jinja2 environment preparation
         if config:
             presskit_context = create_presskit_context(config)
-            call_hook('prepare_jinja2_environment', env=env, context=presskit_context)
-            
+            call_hook("prepare_jinja2_environment", env=env, context=presskit_context)
+
             # Get custom filters and functions from plugins
             custom_filters = {}
             custom_functions = {}
-            for result in call_hook('custom_jinja_filters', context=presskit_context):
+            for result in call_hook("custom_jinja_filters", context=presskit_context):
                 if isinstance(result, dict):
                     custom_filters.update(result)
-            
-            for result in call_hook('custom_jinja_functions', context=presskit_context):
+
+            for result in call_hook("custom_jinja_functions", context=presskit_context):
                 if isinstance(result, dict):
                     custom_functions.update(result)
-            
+
             env.filters.update(custom_filters)
             env.globals.update(custom_functions)
 
@@ -1719,7 +1726,7 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
     """
     # Call pre-build hooks
     presskit_context = create_presskit_context(config)
-    call_hook('pre_build', context=presskit_context)
+    call_hook("pre_build", context=presskit_context)
     if reload:
         smart_reloader = SmartReloader(config, enabled=smart_reload)
         print("Building with auto-reload enabled...")
@@ -1883,11 +1890,11 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
 
     # Call post-build hooks
     build_context = PluginBuildContext(
-        build_results={"success": build_success, "file_count": len(files) if 'files' in locals() else 0},
-        presskit=presskit_context
+        build_results={"success": build_success, "file_count": len(files) if "files" in locals() else 0},
+        presskit=presskit_context,
     )
-    call_hook('post_build', context=build_context)
-    
+    call_hook("post_build", context=build_context)
+
     if build_success:
         print_success("Build complete!")
     else:
@@ -1939,15 +1946,12 @@ def cmd_server(config: SiteConfig, reload: bool = False, smart_reload: bool = Tr
 
     # Call server_start hook
     from presskit.hookspecs import ServerContext
+
     presskit_context = create_presskit_context(config)
     server_context = ServerContext(
-        host=host,
-        port=port,
-        reload=reload,
-        smart_reload=smart_reload,
-        presskit=presskit_context
+        host=host, port=port, reload=reload, smart_reload=smart_reload, presskit=presskit_context
     )
-    call_hook('server_start', context=server_context)
+    call_hook("server_start", context=server_context)
 
     print_success(f"Server running at http://{host}:{port}/")
     print("Press Ctrl+C to stop.")
@@ -2129,3 +2133,443 @@ def cmd_sources() -> bool:
     except Exception as e:
         print_error(f"Error listing sources: {e}")
         return False
+
+
+def cmd_compile(
+    file_path: str,
+    sources: List[str],
+    template_override: Optional[str] = None,
+    output_path: Optional[str] = None,
+    config_file: Optional[str] = None,
+) -> bool:
+    """
+    Compile a single Markdown or HTML file with Jinja templating.
+
+    Args:
+        file_path: Path to the file to compile
+        sources: List of JSON data source files
+        template_override: Optional template file to use instead of frontmatter layout
+        output_path: Optional output path for the compiled HTML
+        config_file: Optional config file path
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        print(f"Compiling: {file_path}")
+
+        # Convert file path to Path object
+        input_file = Path(file_path)
+        if not input_file.exists():
+            print_error(f"File not found: {input_file}")
+            return False
+
+        # Load configuration if available
+        config = None
+        if config_file:
+            try:
+                config_path = find_config_file(config_file)
+                config = load_site_config(config_path)
+            except (FileNotFoundError, ConfigError):
+                print_warning(f"Config file not found or invalid: {config_file}")
+        else:
+            # Try to find config in current directory or parent directories
+            try:
+                config_path = find_config_file()
+                config = load_site_config(config_path)
+                print_info(f"Using config: {config_path}")
+            except (FileNotFoundError, ConfigError):
+                print_info("No config file found, using minimal defaults")
+
+        # Load JSON data sources
+        json_data = {}
+        for source_path in sources:
+            source_file = Path(source_path)
+            if not source_file.exists():
+                print_error(f"Source file not found: {source_file}")
+                return False
+
+            try:
+                with open(source_file, "r") as f:
+                    source_data = json.load(f)
+                    # Use filename without extension as key
+                    source_key = source_file.stem
+                    json_data[source_key] = source_data
+                    print_info(f"Loaded data source: {source_key}")
+            except json.JSONDecodeError as e:
+                print_error(f"Invalid JSON in {source_file}: {e}")
+                return False
+
+        # Determine file type and process accordingly
+        file_extension = input_file.suffix.lower()
+
+        if file_extension == ".md":
+            return compile_markdown_file(input_file, json_data, template_override, output_path, config)
+        elif file_extension == ".html":
+            return compile_html_file(input_file, json_data, template_override, output_path, config)
+        else:
+            print_error(f"Unsupported file type: {file_extension}")
+            print_info("Supported file types: .md, .html")
+            return False
+
+    except Exception as e:
+        print_error(f"Error compiling file: {e}")
+        return False
+
+
+def compile_markdown_file(
+    input_file: Path,
+    json_data: Dict[str, Any],
+    template_override: Optional[str],
+    output_path: Optional[str],
+    config: Optional[SiteConfig],
+) -> bool:
+    """
+    Compile a Markdown file with Jinja templating.
+
+    Args:
+        input_file: Path to the markdown file
+        json_data: Loaded JSON data sources
+        template_override: Optional template override
+        output_path: Optional output path
+        config: Optional site configuration
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Read file content
+        with open(input_file, "r") as f:
+            content = f.read()
+
+        # Extract front matter and content
+        front_matter, md_content, md_queries, md_sources = extract_front_matter(content)
+
+        # Create minimal config if none provided
+        if not config:
+            config = create_minimal_config(input_file.parent)
+
+        # Load frontmatter sources if any
+        frontmatter_sources = {}
+        if md_sources:
+            frontmatter_sources = load_frontmatter_sources(md_sources, input_file.parent)
+
+        # Combine command-line sources with frontmatter sources
+        combined_sources = {**json_data, **frontmatter_sources}
+
+        # Build template context
+        site_ctx = build_site_context(config)
+        build_ctx = build_build_context()
+
+        # Create page context
+        page_ctx = PageContext(
+            filename=input_file.stem,
+            filepath=str(input_file),
+            path=input_file.stem,
+            content=None,  # Will be set after processing
+            layout=template_override or front_matter.get("layout", config.default_template),
+            title=front_matter.get("title"),
+            description=front_matter.get("description"),
+        )
+
+        # Create data context with combined sources
+        data_ctx = DataContext(
+            queries={},
+            sources=combined_sources,
+            page_queries={},
+        )
+
+        # Create complete template context
+        template_context = TemplateContext(
+            site=site_ctx,
+            build=build_ctx,
+            page=page_ctx,
+            data=data_ctx,
+            extras=front_matter,
+        )
+
+        # Process markdown content
+        html_content = process_markdown(
+            md_content, template_context.to_template_vars(), config.content_dir, config, input_file
+        )
+
+        # Update page context with processed content
+        template_context.page.content = html_content
+
+        # Process template if specified
+        if page_ctx.layout:
+            # Look for template in templates directory or same directory as input file
+            template_paths = []
+            if config.templates_dir.exists():
+                template_paths.append(config.templates_dir)
+            template_paths.append(input_file.parent)
+
+            template_found = False
+            for template_dir in template_paths:
+                template_file = template_dir / f"{page_ctx.layout}.html"
+                if template_file.exists():
+                    final_html = process_template(
+                        page_ctx.layout, template_context.to_template_vars(), template_dir, config
+                    )
+                    template_found = True
+                    break
+
+            if not template_found and page_ctx.layout != "none":
+                print_warning(f"Template '{page_ctx.layout}.html' not found, using content only")
+                final_html = html_content
+            else:
+                final_html = html_content if page_ctx.layout == "none" else final_html
+        else:
+            final_html = html_content
+
+        # Determine output path
+        if output_path:
+            output_file = Path(output_path)
+        else:
+            output_file = input_file.with_suffix(".html")
+
+        # Create output directory if needed
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write output file
+        with open(output_file, "w") as f:
+            f.write(final_html)
+
+        print_success(f"Compiled to: {output_file}")
+        return True
+
+    except Exception as e:
+        print_error(f"Error compiling markdown file: {e}")
+        return False
+
+
+def compile_html_file(
+    input_file: Path,
+    json_data: Dict[str, Any],
+    template_override: Optional[str],
+    output_path: Optional[str],
+    config: Optional[SiteConfig],
+) -> bool:
+    """
+    Compile an HTML file with Jinja templating and optional frontmatter.
+
+    Args:
+        input_file: Path to the HTML file
+        json_data: Loaded JSON data sources
+        template_override: Optional template override
+        output_path: Optional output path
+        config: Optional site configuration
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Read file content
+        with open(input_file, "r") as f:
+            content = f.read()
+
+        # Extract front matter from HTML content
+        front_matter, html_content, html_queries, html_sources = extract_front_matter(content)
+
+        # Create minimal config if none provided
+        if not config:
+            config = create_minimal_config(input_file.parent)
+
+        # Load frontmatter sources if any
+        frontmatter_sources = {}
+        if html_sources:
+            frontmatter_sources = load_frontmatter_sources(html_sources, input_file.parent)
+
+        # Combine command-line sources with frontmatter sources
+        combined_sources = {**json_data, **frontmatter_sources}
+
+        # Build template context
+        site_ctx = build_site_context(config)
+        build_ctx = build_build_context()
+
+        # Create page context - use frontmatter values if available
+        page_ctx = PageContext(
+            filename=input_file.stem,
+            filepath=str(input_file),
+            path=input_file.stem,
+            content=html_content,
+            layout=template_override or front_matter.get("layout", "none"),
+            title=front_matter.get("title"),
+            description=front_matter.get("description"),
+        )
+
+        # Process HTML file's queries if any (similar to markdown)
+        page_query_results = {}
+        if html_queries:
+            # Build temporary context for processing queries
+            temp_context = TemplateContext(
+                site=site_ctx,
+                build=build_ctx,
+                page=page_ctx,
+                data=DataContext(queries={}, sources=combined_sources, page_queries={}),
+                extras=front_matter,
+            )
+            # Use async query processor for HTML queries
+            processor = QueryProcessor()
+            page_query_results = asyncio.run(
+                processor.process_markdown_queries(html_queries, temp_context.to_template_vars(), config)
+            )
+
+        # Create data context with combined sources and page queries
+        data_ctx = DataContext(
+            queries={},
+            sources=combined_sources,
+            page_queries=page_query_results,
+        )
+
+        # Create complete template context with frontmatter extras
+        template_context = TemplateContext(
+            site=site_ctx,
+            build=build_ctx,
+            page=page_ctx,
+            data=data_ctx,
+            extras=front_matter,
+        )
+
+        # Process HTML file as Jinja template
+        template_vars = template_context.to_template_vars()
+
+        # Process the HTML content with Jinja
+        env = Environment(
+            loader=FileSystemLoader(input_file.parent),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
+        env.filters.update(JINJA_FILTERS)
+        env.globals.update(JINJA_GLOBALS)
+
+        # Process as template
+        template = env.from_string(html_content)
+        final_html = template.render(**template_vars)
+
+        # Apply template layout if specified (from frontmatter or override)
+        if page_ctx.layout and page_ctx.layout != "none":
+            # Look for template file
+            template_paths = []
+            if config and config.templates_dir.exists():
+                template_paths.append(config.templates_dir)
+            template_paths.append(input_file.parent)
+
+            template_found = False
+            for template_dir in template_paths:
+                template_file = template_dir / page_ctx.layout
+                if not page_ctx.layout.endswith(".html"):
+                    template_file = template_dir / f"{page_ctx.layout}.html"
+
+                if template_file.exists():
+                    # Update page content with processed HTML
+                    template_vars["page"]["content"] = Markup(final_html)
+
+                    # Process with the layout template
+                    final_html = process_template(page_ctx.layout, template_vars, template_dir, config)
+                    template_found = True
+                    break
+
+            if not template_found:
+                print_warning(f"Template '{page_ctx.layout}.html' not found, using content only")
+
+        # Determine output path
+        if output_path:
+            output_file = Path(output_path)
+        else:
+            output_file = input_file.with_name(f"{input_file.stem}_compiled.html")
+
+        # Create output directory if needed
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write output file
+        with open(output_file, "w") as f:
+            f.write(final_html)
+
+        print_success(f"Compiled to: {output_file}")
+        return True
+
+    except Exception as e:
+        print_error(f"Error compiling HTML file: {e}")
+        return False
+
+
+def load_frontmatter_sources(
+    sources_config: Dict[str, Any], 
+    base_dir: Path
+) -> Dict[str, Any]:
+    """
+    Load data sources defined in frontmatter.
+
+    Args:
+        sources_config: Sources configuration from frontmatter
+        base_dir: Base directory for resolving relative paths
+
+    Returns:
+        Dictionary with loaded source data
+    """
+    loaded_sources = {}
+    
+    for source_name, source_config in sources_config.items():
+        try:
+            if isinstance(source_config, dict):
+                source_type = source_config.get("type", "json")
+                source_path = source_config.get("path")
+                
+                if not source_path:
+                    print_warning(f"No path specified for source '{source_name}', skipping")
+                    continue
+                
+                # Resolve path relative to base directory or working directory
+                path_obj = Path(source_path)
+                if not path_obj.is_absolute():
+                    # Try relative to base directory first
+                    file_path = base_dir / source_path
+                    # If that doesn't exist, try relative to current working directory
+                    if not file_path.exists():
+                        cwd_path = Path.cwd() / source_path
+                        if cwd_path.exists():
+                            file_path = cwd_path
+                else:
+                    file_path = path_obj
+                
+                if not file_path.exists():
+                    print_warning(f"Source file not found: {file_path}")
+                    continue
+                
+                # Currently only support JSON sources in frontmatter
+                if source_type == "json":
+                    with open(file_path, "r") as f:
+                        source_data = json.load(f)
+                        loaded_sources[source_name] = source_data
+                        print_info(f"Loaded frontmatter source: {source_name}")
+                else:
+                    print_warning(f"Unsupported source type '{source_type}' for source '{source_name}'")
+            else:
+                print_warning(f"Invalid source configuration for '{source_name}', expected dict")
+                
+        except json.JSONDecodeError as e:
+            print_error(f"Invalid JSON in source '{source_name}': {e}")
+        except Exception as e:
+            print_error(f"Error loading source '{source_name}': {e}")
+    
+    return loaded_sources
+
+
+def create_minimal_config(base_dir: Path) -> SiteConfig:
+    """
+    Create a minimal configuration for single file compilation.
+
+    Args:
+        base_dir: Base directory for relative paths
+
+    Returns:
+        Minimal SiteConfig object
+    """
+    return SiteConfig(
+        title="Compiled Page",
+        site_dir=base_dir,
+        content_dir=base_dir,
+        templates_dir=base_dir / "templates",
+        output_dir=base_dir,
+        cache_dir=base_dir / ".cache",
+    )
