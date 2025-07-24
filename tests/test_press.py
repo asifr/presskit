@@ -201,7 +201,7 @@ queries:
 
 This is content."""
         
-        front_matter, md_content, queries = extract_front_matter(content)
+        front_matter, md_content, queries, sources = extract_front_matter(content)
         assert front_matter == {"title": "Test Page", "layout": "custom"}
         assert queries == {"posts": {"source": "db", "query": "SELECT * FROM posts"}}
         assert md_content.strip() == "# Hello World\n\nThis is content."
@@ -210,7 +210,7 @@ This is content."""
         """Test extracting from content without front matter."""
         content = "# Just Markdown\n\nNo front matter here."
         
-        front_matter, md_content, queries = extract_front_matter(content)
+        front_matter, md_content, queries, sources = extract_front_matter(content)
         assert front_matter == {}
         assert queries == {}
         assert md_content == content
@@ -224,7 +224,7 @@ invalid yaml here: [
 
 Content here."""
         
-        front_matter, md_content, queries = extract_front_matter(content)
+        front_matter, md_content, queries, sources = extract_front_matter(content)
         assert front_matter == {}
         assert queries == {}
         assert md_content == content

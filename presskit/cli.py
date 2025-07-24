@@ -449,12 +449,14 @@ def sources():
 @click.option("--template", help="Template file to use (default: use file's layout from frontmatter)")
 @click.option("--output", help="Output HTML file path")
 @click.option("--config", help="Path to presskit.json config file (optional)")
+@click.option("--watch", is_flag=True, help="Watch for changes and recompile automatically")
 def compile(
     file: str,
     source: t.Tuple[str, ...],
     template: t.Optional[str] = None,
     output: t.Optional[str] = None,
     config: t.Optional[str] = None,
+    watch: bool = False,
 ):
     """Compile a single Markdown or HTML file with Jinja templating.
 
@@ -467,7 +469,7 @@ def compile(
     """
     try:
         success = cmd_compile(
-            file_path=file, sources=list(source), template_override=template, output_path=output, config_file=config
+            file_path=file, sources=list(source), template_override=template, output_path=output, config_file=config, watch=watch
         )
         if not success:
             raise click.Abort()

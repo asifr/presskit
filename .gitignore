@@ -138,3 +138,5 @@ CLAUDE.md
 examples/*/public/
 examples/*/.cache/
 TODO.md
+docs/
+examples/

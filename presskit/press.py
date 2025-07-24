@@ -2141,6 +2141,7 @@ def cmd_compile(
     template_override: Optional[str] = None,
     output_path: Optional[str] = None,
     config_file: Optional[str] = None,
+    watch: bool = False,
 ) -> bool:
     """
     Compile a single Markdown or HTML file with Jinja templating.
@@ -2151,70 +2152,144 @@ def cmd_compile(
         template_override: Optional template file to use instead of frontmatter layout
         output_path: Optional output path for the compiled HTML
         config_file: Optional config file path
+        watch: Whether to watch for file changes and recompile automatically
 
     Returns:
         True if successful, False otherwise
     """
-    try:
-        print(f"Compiling: {file_path}")
+    def do_compile():
+        """Perform the actual compilation."""
+        try:
+            print(f"Compiling: {file_path}")
 
-        # Convert file path to Path object
-        input_file = Path(file_path)
-        if not input_file.exists():
-            print_error(f"File not found: {input_file}")
+            # Convert file path to Path object
+            input_file = Path(file_path)
+            if not input_file.exists():
+                print_error(f"File not found: {input_file}")
+                return False
+
+            # Load configuration if available
+            config = None
+            if config_file:
+                try:
+                    config_path = find_config_file(config_file)
+                    config = load_site_config(config_path)
+                except (FileNotFoundError, ConfigError):
+                    print_warning(f"Config file not found or invalid: {config_file}")
+            else:
+                # Try to find config in current directory or parent directories
+                try:
+                    config_path = find_config_file()
+                    config = load_site_config(config_path)
+                    print_info(f"Using config: {config_path}")
+                except (FileNotFoundError, ConfigError):
+                    print_info("No config file found, using minimal defaults")
+
+            # Load JSON data sources
+            json_data = {}
+            for source_path in sources:
+                source_file = Path(source_path)
+                if not source_file.exists():
+                    print_error(f"Source file not found: {source_file}")
+                    return False
+
+                try:
+                    with open(source_file, "r") as f:
+                        source_data = json.load(f)
+                        # Use filename without extension as key
+                        source_key = source_file.stem
+                        json_data[source_key] = source_data
+                        print_info(f"Loaded data source: {source_key}")
+                except json.JSONDecodeError as e:
+                    print_error(f"Invalid JSON in {source_file}: {e}")
+                    return False
+
+            # Determine file type and process accordingly
+            file_extension = input_file.suffix.lower()
+
+            if file_extension == ".md":
+                return compile_markdown_file(input_file, json_data, template_override, output_path, config)
+            elif file_extension == ".html":
+                return compile_html_file(input_file, json_data, template_override, output_path, config)
+            else:
+                print_error(f"Unsupported file type: {file_extension}")
+                print_info("Supported file types: .md, .html")
+                return False
+
+        except Exception as e:
+            print_error(f"Error compiling file: {e}")
             return False
 
-        # Load configuration if available
-        config = None
-        if config_file:
-            try:
-                config_path = find_config_file(config_file)
-                config = load_site_config(config_path)
-            except (FileNotFoundError, ConfigError):
-                print_warning(f"Config file not found or invalid: {config_file}")
-        else:
-            # Try to find config in current directory or parent directories
-            try:
-                config_path = find_config_file()
-                config = load_site_config(config_path)
-                print_info(f"Using config: {config_path}")
-            except (FileNotFoundError, ConfigError):
-                print_info("No config file found, using minimal defaults")
+    # If watch mode is enabled
+    if watch:
+        print("Watch mode enabled...")
+        print("Watching for changes and recompiling automatically...")
+        print("Press Ctrl+C to stop.")
 
-        # Load JSON data sources
-        json_data = {}
+        # Initial compilation
+        success = do_compile()
+        if not success:
+            return False
+
+        # Determine paths to watch
+        input_file = Path(file_path)
+        watch_paths = [input_file.parent]  # Watch the directory containing the file
+
+        # Add source file directories to watch paths
         for source_path in sources:
             source_file = Path(source_path)
-            if not source_file.exists():
-                print_error(f"Source file not found: {source_file}")
-                return False
+            if source_file.exists() and source_file.parent not in watch_paths:
+                watch_paths.append(source_file.parent)
 
-            try:
-                with open(source_file, "r") as f:
-                    source_data = json.load(f)
-                    # Use filename without extension as key
-                    source_key = source_file.stem
-                    json_data[source_key] = source_data
-                    print_info(f"Loaded data source: {source_key}")
-            except json.JSONDecodeError as e:
-                print_error(f"Invalid JSON in {source_file}: {e}")
-                return False
-
-        # Determine file type and process accordingly
-        file_extension = input_file.suffix.lower()
-
-        if file_extension == ".md":
-            return compile_markdown_file(input_file, json_data, template_override, output_path, config)
-        elif file_extension == ".html":
-            return compile_html_file(input_file, json_data, template_override, output_path, config)
+        # Add config directory if available
+        if config_file:
+            config_path = Path(config_file)
+            if config_path.exists() and config_path.parent not in watch_paths:
+                watch_paths.append(config_path.parent)
         else:
-            print_error(f"Unsupported file type: {file_extension}")
-            print_info("Supported file types: .md, .html")
-            return False
+            # Try to find and watch config directory
+            try:
+                config_path = find_config_file()
+                if config_path.parent not in watch_paths:
+                    watch_paths.append(config_path.parent)
+            except (FileNotFoundError, ConfigError):
+                pass
 
-    except Exception as e:
-        print_error(f"Error compiling file: {e}")
-        return False
+        print_info(f"Watching directories: {[str(p) for p in watch_paths]}")
+
+        try:
+            from watchfiles import watch as watch_files
+            for changes in watch_files(*watch_paths):
+                # Filter changes to only relevant files
+                relevant_changes = []
+                input_file_resolved = input_file.resolve()
+                
+                for change in changes:
+                    change_path = Path(change[1]).resolve()
+                    
+                    # Check if it's the target file, a source file, or config file
+                    is_target_file = change_path == input_file_resolved
+                    is_source_file = any(Path(source).resolve() == change_path for source in sources)
+                    is_config_file = change_path.name == "presskit.json"
+                    
+                    if is_target_file or is_source_file or is_config_file:
+                        relevant_changes.append(change)
+
+                if relevant_changes:
+                    print(f"\nDetected changes: {[str(Path(change[1]).name) for change in relevant_changes]}")
+                    print("⚡ Recompiling...")
+                    success = do_compile()
+                    if success:
+                        print("✅ Compilation completed successfully")
+                    else:
+                        print("❌ Compilation failed")
+
+        except KeyboardInterrupt:
+            print("\nStopping file watcher.")
+            return True
+    else:
+        # Single compilation
+        return do_compile()
 
 
 def compile_markdown_file(
