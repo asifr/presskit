@@ -1200,7 +1200,7 @@ Presskit includes useful Jinja2 filters and functions:
 
 ## Changes
 
-- Unreleased - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument, new `compile` command for standalone file compilation, frontmatter support for HTML files, frontmatter data sources support, copy static assets with glob patterns, removed env: pattern for standard shell expansion with `${VAR}` syntax
+- 0.0.7 - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument, new `compile` command for standalone file compilation, frontmatter support for HTML files, frontmatter data sources support, copy static assets with glob patterns, removed env: pattern for standard shell expansion with `${VAR}` syntax
 - 0.0.6 - CLI upgrades, sources are now defined as a list in the config, smart reload only builds changed files
 - 0.0.5 - Filters and functions for Jinja2 templates, new `template_debug()` function for debugging templates
 - 0.0.4 - Bug fix for DuckDB data source to read relative paths correctly, DuckDB read-only mode, `--version` flag for CLI
