@@ -451,7 +451,9 @@ def sources():
 @click.option("--config", help="Path to presskit.json config file (optional)")
 @click.option("--watch", is_flag=True, help="Watch for changes and recompile automatically")
 @click.option("--type", "file_type", type=click.Choice(["md", "html"]), help="File type when reading from stdin")
+@click.pass_context
 def compile(
+    ctx,
     file: t.Optional[str],
     source: t.Tuple[str, ...],
     template: t.Optional[str] = None,
@@ -477,7 +479,8 @@ def compile(
         if file is None or file == "-":
             if not file_type:
                 print_error("--type option is required when reading from stdin")
-                raise click.Abort()
+                print_error("Use --type md for Markdown or --type html for HTML content")
+                ctx.exit(1)
             import sys
 
             stdin_content = sys.stdin.read()
@@ -499,6 +502,8 @@ def compile(
         )
         if not success:
             raise click.Abort()
+    except click.exceptions.Exit:
+        raise  # Re-raise Exit exceptions to let Click handle them cleanly
     except (FileNotFoundError, ConfigError) as e:
         print_error(str(e))
         raise click.Abort()
