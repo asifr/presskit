@@ -473,7 +473,7 @@ Presskit supports multiple data source types. Add them to your `presskit.json`:
             "port": 5432,
             "database": "mydb",
             "username": "user",
-            "password": "env:DB_PASSWORD"
+            "password": "${DB_PASSWORD}"
         }
     }
 }
@@ -516,7 +516,7 @@ You can also use connection strings for database sources:
     "sources": {
         "prod_db": {
             "type": "postgresql",
-            "connection_string": "env:DATABASE_URL"
+            "connection_string": "${DATABASE_URL}"
         }
     }
 }
@@ -986,7 +986,7 @@ presskit compile content.md --template newsletter.html --output newsletter.html
 
 ## Environment Variables
 
-Presskit supports environment variables throughout your configuration using the `env:` prefix. This is essential for keeping sensitive data like database passwords out of your configuration files.
+Presskit supports environment variables throughout your configuration using standard shell expansion syntax (`${VAR}` or `$VAR`). This is essential for keeping sensitive data like database passwords out of your configuration files.
 
 ### Using Environment Variables
 
@@ -994,23 +994,23 @@ Any string value in your `presskit.json` can reference an environment variable:
 
 ```json
 {
-    "title": "env:SITE_TITLE",
-    "url": "env:SITE_URL",
+    "title": "${SITE_TITLE}",
+    "url": "${SITE_URL}",
     "sources": {
         "database": {
             "type": "postgresql",
-            "host": "env:DB_HOST",
-            "port": "env:DB_PORT", 
-            "database": "env:DB_NAME",
-            "username": "env:DB_USER",
-            "password": "env:DB_PASSWORD"
+            "host": "${DB_HOST}",
+            "port": "${DB_PORT}", 
+            "database": "${DB_NAME}",
+            "username": "${DB_USER}",
+            "password": "${DB_PASSWORD}"
         }
     },
     "queries": [
         {
             "name": "posts",
             "source": "database",
-            "query": "env:POSTS_QUERY"
+            "query": "${POSTS_QUERY}"
         }
     ]
 }
@@ -1018,7 +1018,7 @@ Any string value in your `presskit.json` can reference an environment variable:
 
 ### Path Variables
 
-Environment variables in paths support both `${VAR}` and `$VAR` syntax:
+Environment variables in all configuration values support both `${VAR}` and `$VAR` syntax:
 
 ```json
 {
@@ -1052,7 +1052,7 @@ presskit build
     "title": "My Blog",
     "description": "A blog about web development",
     "author": "Jane Developer", 
-    "url": "env:SITE_URL",
+    "url": "${SITE_URL}",
     "version": "2.1.0",
     "language": "en-US",
     
@@ -1063,19 +1063,19 @@ presskit build
     
     "default_template": "page",
     "markdown_extension": "md",
-    "workers": "env:BUILD_WORKERS",
+    "workers": "${BUILD_WORKERS}",
     
     "server_host": "0.0.0.0",
-    "server_port": "env:PORT",
+    "server_port": "${PORT}",
     
     "sources": {
         "blog_db": {
             "type": "postgresql",
-            "host": "env:DB_HOST",
+            "host": "${DB_HOST}",
             "port": 5432,
-            "database": "env:DB_NAME",
-            "username": "env:DB_USER",
-            "password": "env:DB_PASSWORD",
+            "database": "${DB_NAME}",
+            "username": "${DB_USER}",
+            "password": "${DB_PASSWORD}",
             "options": {
                 "pool_min_size": 2,
                 "pool_max_size": 10
@@ -1094,8 +1094,8 @@ presskit build
     "default_source": "blog_db",
     
     "variables": {
-        "environment": "env:ENVIRONMENT",
-        "analytics_id": "env:ANALYTICS_ID"
+        "environment": "${ENVIRONMENT}",
+        "analytics_id": "${ANALYTICS_ID}"
     },
     
     "queries": [
@@ -1200,7 +1200,7 @@ Presskit includes useful Jinja2 filters and functions:
 
 ## Changes
 
-- Unreleased - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument, new `compile` command for standalone file compilation, frontmatter support for HTML files, frontmatter data sources support, copy static assets with glob patterns
+- Unreleased - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument, new `compile` command for standalone file compilation, frontmatter support for HTML files, frontmatter data sources support, copy static assets with glob patterns, removed env: pattern for standard shell expansion with `${VAR}` syntax
 - 0.0.6 - CLI upgrades, sources are now defined as a list in the config, smart reload only builds changed files
 - 0.0.5 - Filters and functions for Jinja2 templates, new `template_debug()` function for debugging templates
 - 0.0.4 - Bug fix for DuckDB data source to read relative paths correctly, DuckDB read-only mode, `--version` flag for CLI

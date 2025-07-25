@@ -11,18 +11,18 @@ class ConfigError(Exception):
 
 
 class EnvironmentLoader:
-    """Handles loading of environment variables with optional 'env:' prefix."""
+    """Handles loading of environment variables using standard shell expansion syntax."""
 
     @staticmethod
     def load_env_value(value: Any) -> Any:
         """
-        Load environment variable if value is a string starting with 'env:'.
+        Load environment variables using standard shell expansion syntax ${VAR} or $VAR.
 
         Args:
             value: The configuration value to process
 
         Returns:
-            The environment variable value if prefixed with 'env:', otherwise the original value
+            The value with environment variables expanded, or original value if not a string
 
         Raises:
             ConfigError: If environment variable is not found
@@ -30,14 +30,20 @@ class EnvironmentLoader:
         if not isinstance(value, str):
             return value
 
-        if value.startswith("env:"):
-            env_var = value[4:]  # Remove 'env:' prefix
-            env_value = os.getenv(env_var)
-            if env_value is None:
-                raise ConfigError(f"Environment variable '{env_var}' not found")
-            return env_value
-
-        return value
+        # Use standard shell expansion for ${VAR} and $VAR patterns
+        expanded = os.path.expandvars(value)
+        
+        # Check if expansion failed (contains unexpanded variables)
+        if '$' in expanded and expanded != value:
+            # Find unexpanded variables for better error messages
+            import re
+            unexpanded = re.findall(r'\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)', expanded)
+            for match in unexpanded:
+                var_name = match[0] or match[1]
+                if os.getenv(var_name) is None:
+                    raise ConfigError(f"Environment variable '{var_name}' not found")
+        
+        return expanded
 
     @classmethod
     def process_config(cls, config_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -78,4 +84,4 @@ class EnvironmentLoader:
         Returns:
             Path with environment variables resolved
         """
-        return os.path.expandvars(path_str)
+        return EnvironmentLoader.load_env_value(path_str)
