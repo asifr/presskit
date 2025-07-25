@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from jinja2 import Environment, FileSystemLoader, select_autoescape, pass_context
 import typing as t
 from typing import Dict, List, Optional, Any, TypeVar, Union, Mapping, Sequence
-from presskit.utils import print_error, print_warning, print_success, print_info, print_progress
+from presskit.utils import print_error, print_warning, print_success, print_info, print_progress, copy_static_assets
 from presskit.config.models import (
     SiteConfig,
     SiteContext,
@@ -1735,7 +1735,7 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
             print("Smart reload optimization enabled (use --disable-smart-reload to disable)")
         else:
             print("Smart reload optimization disabled")
-        print("Watching for changes in content/, templates/, and data directories...")
+        print("Watching for changes in content/, templates/, static/, and data directories...")
         print("Press Ctrl+C to stop.")
 
         def do_build(rebuild_plan=None):
@@ -1755,6 +1755,9 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
             # Load query cache if available
             query_cache_file = get_query_cache_file(config)
             query_cache = load_json(query_cache_file) if check_query_cache(config) else None
+
+            # Copy static assets before building content
+            copy_static_assets(config, smart_reloader)
 
             # Determine what to build
             if file:
@@ -1821,6 +1824,10 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
         # Set up file watching
         watch_paths = [config.content_dir, config.templates_dir]
 
+        # Add static directory if it exists
+        if config.static_dir.exists():
+            watch_paths.append(config.static_dir)
+
         # Add data directory if it exists (for JSON sources)
         data_dir = config.site_dir / "data"
         if data_dir.exists():
@@ -1851,6 +1858,9 @@ def cmd_build(config: SiteConfig, file: Optional[str] = None, reload: bool = Fal
     # Load query cache if available
     query_cache_file = get_query_cache_file(config)
     query_cache = load_json(query_cache_file) if check_query_cache(config) else None
+
+    # Copy static assets before building content
+    copy_static_assets(config)
 
     # Check if a specific file should be built
     if file:

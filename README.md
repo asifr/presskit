@@ -7,6 +7,7 @@ A powerful static site generator that combines Markdown content with Jinja2 temp
 - **Jinja2 Templating**: Use Jinja2 variables and logic in both Markdown content and HTML layouts
 - **Multiple Data Sources**: Connect to SQLite, PostgreSQL, DuckDB databases, and JSON files with JSONPath querying
 - **Dynamic Page Generation**: Generate multiple pages automatically from database query results
+- **Static Asset Management**: Automatic copying of CSS, JavaScript, images, and other static files with smart incremental updates
 - **Structured Context**: Access site metadata, build information, and data through a clean template context
 
 ## Installation
@@ -51,6 +52,7 @@ my-site/
 ├── templates/         # HTML templates
 │   ├── base.html      # Base template
 │   └── page.html      # Page template
+├── static/            # Static assets (CSS, JS, images)
 └── public/            # Generated output (created automatically)
 ```
 
@@ -166,6 +168,255 @@ Presskit provides a structured context with the following variables available in
 - `data.page_queries` - Page-specific query results
 
 Plus any custom variables from your front matter are available at the top level.
+
+## Static Asset Management
+
+Presskit includes comprehensive static asset management for CSS, JavaScript, images, fonts, and other static files. Assets are automatically copied from your `static/` directory to the output directory during builds, with smart incremental copying in watch mode.
+
+### Directory Structure
+
+Add a `static/` directory to your project for all static assets:
+
+```
+my-site/
+├── presskit.json
+├── content/
+├── templates/
+├── static/              # Static assets directory
+│   ├── css/
+│   │   ├── main.css
+│   │   └── theme.css
+│   ├── js/
+│   │   ├── app.js
+│   │   └── vendor.js
+│   ├── images/
+│   │   ├── logo.png
+│   │   └── hero.jpg
+│   └── fonts/
+│       └── custom-font.woff2
+└── public/              # Generated output
+    ├── css/             # Assets copied here
+    ├── js/
+    ├── images/
+    └── fonts/
+```
+
+### Asset Copying Behavior
+
+**During builds**, all files in `static/` are copied to the root of your output directory:
+- `static/css/main.css` → `public/css/main.css`
+- `static/images/logo.png` → `public/images/logo.png`
+- `static/js/app.js` → `public/js/app.js`
+
+**During watch mode** (`--reload`), only changed assets are copied for faster builds.
+
+### Configuration
+
+Asset management can be configured in your `presskit.json`:
+
+```json
+{
+    "static_dir": "static",
+    "assets": {
+        "include_patterns": ["**/*"],
+        "ignore_patterns": [".DS_Store", "*.tmp", "*.swp", "Thumbs.db"],
+        "clean_destination": false
+    }
+}
+```
+
+#### Configuration Options
+
+- **`static_dir`** (default: `"static"`) - Directory containing static assets
+- **`assets.include_patterns`** (default: `["**/*"]`) - Glob patterns for files to copy
+- **`assets.ignore_patterns`** - Patterns to exclude from copying
+- **`assets.clean_destination`** (default: `false`) - Remove orphaned files from previous builds
+
+#### Advanced Asset Configuration
+
+```json
+{
+    "static_dir": "assets",
+    "assets": {
+        "include_patterns": ["*.css", "*.js", "images/**/*", "fonts/**/*"],
+        "ignore_patterns": [
+            ".DS_Store",
+            "*.tmp", 
+            "*.swp",
+            "*.backup",
+            "node_modules/**/*"
+        ],
+        "clean_destination": true
+    }
+}
+```
+
+### Using Assets in Templates
+
+Reference your static assets in templates using standard paths:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ page.title or site.title }}</title>
+    <!-- CSS assets -->
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/theme.css">
+</head>
+<body>
+    <header>
+        <img src="/images/logo.png" alt="{{ site.title }}">
+        <h1>{{ site.title }}</h1>
+    </header>
+    
+    <main>
+        {{ page.content }}
+    </main>
+    
+    <!-- JavaScript assets -->
+    <script src="/js/vendor.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
+```
+
+### Asset Organization Patterns
+
+#### By File Type (Recommended)
+```
+static/
+├── css/
+├── js/
+├── images/
+├── fonts/
+└── downloads/
+```
+
+#### By Feature/Section
+```
+static/
+├── home/
+│   ├── hero.jpg
+│   └── home.css
+├── blog/
+│   ├── post.css
+│   └── syntax.css
+└── shared/
+    ├── common.css
+    └── logo.png
+```
+
+### Performance Features
+
+- **Parallel Processing**: Large asset directories are processed using multiple threads
+- **Incremental Copying**: Watch mode only copies changed files
+- **Smart Change Detection**: Uses modification time comparison
+- **File Watching**: Static directory changes trigger rebuilds automatically
+
+### File Watching Integration
+
+When using `presskit build --reload` or `presskit server --reload`, the static directory is automatically watched for changes:
+
+```bash
+# Watches content/, templates/, static/, and data/ directories
+presskit build --reload
+```
+
+Changes to static assets trigger:
+1. Incremental asset copying (only changed files)
+2. Browser refresh (if using development server)
+3. Build completion notification
+
+### Glob Pattern Examples
+
+Control which files are copied with glob patterns:
+
+```json
+{
+    "assets": {
+        "include_patterns": [
+            "**/*.css",           // All CSS files
+            "**/*.js",            // All JavaScript files  
+            "images/**/*.{png,jpg,gif,svg}",  // Specific image types
+            "fonts/**/*.{woff,woff2,ttf}",    // Font files
+            "downloads/**/*"      // Everything in downloads
+        ],
+        "ignore_patterns": [
+            "**/*.scss",          // Ignore Sass source files
+            "**/*.ts",            // Ignore TypeScript source  
+            "**/node_modules/**", // Ignore dependencies
+            "**/.git/**",         // Ignore version control
+            "**/*~",              // Ignore backup files
+            "**/Thumbs.db"        // Ignore system files
+        ]
+    }
+}
+```
+
+### Asset Processing Workflow
+
+Assets are copied **before** content processing, ensuring they're available when templates reference them:
+
+1. **Asset Discovery**: Find files matching copy patterns
+2. **Filter**: Remove files matching ignore patterns  
+3. **Copy**: Transfer files to output directory (parallel when possible)
+4. **Content Processing**: Build Markdown files and templates
+5. **Page Generation**: Generate pages from database queries
+
+### Custom Static Directory
+
+You can use a different directory name for your static assets:
+
+```json
+{
+    "static_dir": "assets"
+}
+```
+
+```
+my-site/
+├── presskit.json
+├── content/
+├── templates/
+├── assets/          # Custom static directory name
+│   ├── styles/
+│   ├── scripts/
+│   └── media/
+└── public/
+```
+
+### Environment Variables
+
+Static directory paths support environment variables:
+
+```json
+{
+    "static_dir": "${ASSETS_DIR}/static"
+}
+```
+
+### Build Output
+
+During builds, Presskit reports asset copying progress:
+
+```bash
+$ presskit build
+Copying static assets...
+Copied 45 assets successfully
+Building...
+Found 12 files to process
+Build complete!
+```
+
+For large asset directories:
+```bash
+Copying static assets...
+Copying assets: 127/150 (84.7%)
+Copied 148 assets successfully, 2 failed
+  - Failed: images/corrupted.jpg (Permission denied)
+  - Failed: large-file.zip (Disk full)
+```
 
 ## Using Variables in Markdown
 
