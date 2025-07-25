@@ -65,7 +65,7 @@ def print_progress(current: int, total: int, prefix: str = "Progress") -> None:
 
 
 # Asset Management Functions
-def get_asset_files(static_dir: Path, patterns: t.List[str], ignore_patterns: t.List[str]) -> t.List[Path]:
+def get_asset_files(static_dir: Path, patterns: t.List[str], exclude_patterns: t.List[str]) -> t.List[Path]:
     """Get list of asset files matching patterns."""
     if not static_dir.exists():
         return []
@@ -85,13 +85,13 @@ def get_asset_files(static_dir: Path, patterns: t.List[str], ignore_patterns: t.
                     asset_files.append(file_path)
 
     # Filter out ignored patterns
-    if ignore_patterns:
+    if exclude_patterns:
         filtered_files = []
         for file_path in asset_files:
             relative_path = file_path.relative_to(static_dir)
             should_ignore = False
 
-            for ignore_pattern in ignore_patterns:
+            for ignore_pattern in exclude_patterns:
                 if fnmatch.fnmatch(str(relative_path), ignore_pattern) or fnmatch.fnmatch(
                     file_path.name, ignore_pattern
                 ):
@@ -143,7 +143,7 @@ def copy_all_assets(config, static_dir: t.Optional[Path] = None) -> bool:
     print_info("Copying static assets...")
 
     # Get all asset files
-    asset_files = get_asset_files(static_dir, config.assets.include_patterns, config.assets.ignore_patterns)
+    asset_files = get_asset_files(static_dir, config.assets.include_patterns, config.assets.exclude_patterns)
 
     if not asset_files:
         print_info("No assets to copy")
@@ -214,7 +214,7 @@ def copy_changed_assets(config, changes: t.List, smart_reloader=None, static_dir
         return True
 
     # Get all asset files and filter for changed ones
-    asset_files = get_asset_files(static_dir, config.assets.include_patterns, config.assets.ignore_patterns)
+    asset_files = get_asset_files(static_dir, config.assets.include_patterns, config.assets.exclude_patterns)
 
     if not asset_files:
         return True

@@ -1,5 +1,43 @@
 {
   "$defs": {
+    "AssetConfig": {
+      "description": "Configuration for static asset management.",
+      "properties": {
+        "include_patterns": {
+          "default": [
+            "**/*"
+          ],
+          "description": "Glob patterns for files to copy",
+          "items": {
+            "type": "string"
+          },
+          "title": "Include Patterns",
+          "type": "array"
+        },
+        "exclude_patterns": {
+          "default": [
+            ".DS_Store",
+            "*.tmp",
+            "*.swp",
+            "Thumbs.db"
+          ],
+          "description": "Patterns to exclude from copying",
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignore Patterns",
+          "type": "array"
+        },
+        "clean_destination": {
+          "default": false,
+          "description": "Remove orphaned files from previous builds",
+          "title": "Clean Destination",
+          "type": "boolean"
+        }
+      },
+      "title": "AssetConfig",
+      "type": "object"
+    },
     "PluginConfig": {
       "description": "Plugin configuration.",
       "properties": {
@@ -326,6 +364,13 @@
       "title": "Cache Dir",
       "type": "string"
     },
+    "static_dir": {
+      "default": "static",
+      "description": "Static assets directory",
+      "format": "path",
+      "title": "Static Dir",
+      "type": "string"
+    },
     "default_template": {
       "default": "page",
       "description": "Default template name",
@@ -413,6 +458,10 @@
       },
       "title": "Plugin Directories",
       "type": "array"
+    },
+    "assets": {
+      "$ref": "#/$defs/AssetConfig",
+      "description": "Static asset management configuration"
     }
   },
   "title": "SiteConfig",

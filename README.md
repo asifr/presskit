@@ -219,7 +219,7 @@ Asset management can be configured in your `presskit.json`:
     "static_dir": "static",
     "assets": {
         "include_patterns": ["**/*"],
-        "ignore_patterns": [".DS_Store", "*.tmp", "*.swp", "Thumbs.db"],
+        "exclude_patterns": [".DS_Store", "*.tmp", "*.swp", "Thumbs.db"],
         "clean_destination": false
     }
 }
@@ -229,7 +229,7 @@ Asset management can be configured in your `presskit.json`:
 
 - **`static_dir`** (default: `"static"`) - Directory containing static assets
 - **`assets.include_patterns`** (default: `["**/*"]`) - Glob patterns for files to copy
-- **`assets.ignore_patterns`** - Patterns to exclude from copying
+- **`assets.exclude_patterns`** - Patterns to exclude from copying
 - **`assets.clean_destination`** (default: `false`) - Remove orphaned files from previous builds
 
 #### Advanced Asset Configuration
@@ -239,7 +239,7 @@ Asset management can be configured in your `presskit.json`:
     "static_dir": "assets",
     "assets": {
         "include_patterns": ["*.css", "*.js", "images/**/*", "fonts/**/*"],
-        "ignore_patterns": [
+        "exclude_patterns": [
             ".DS_Store",
             "*.tmp", 
             "*.swp",
@@ -342,7 +342,7 @@ Control which files are copied with glob patterns:
             "fonts/**/*.{woff,woff2,ttf}",    // Font files
             "downloads/**/*"      // Everything in downloads
         ],
-        "ignore_patterns": [
+        "exclude_patterns": [
             "**/*.scss",          // Ignore Sass source files
             "**/*.ts",            // Ignore TypeScript source  
             "**/node_modules/**", // Ignore dependencies
@@ -1200,7 +1200,7 @@ Presskit includes useful Jinja2 filters and functions:
 
 ## Changes
 
-- Unreleased - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument, new `compile` command for standalone file compilation, frontmatter support for HTML files, frontmatter data sources support
+- Unreleased - New plugin system using pluggy, livereload plugin for automatic browser refresh, CLI migrated to click, init command accepts an optional directory argument, new `compile` command for standalone file compilation, frontmatter support for HTML files, frontmatter data sources support, copy static assets with glob patterns
 - 0.0.6 - CLI upgrades, sources are now defined as a list in the config, smart reload only builds changed files
 - 0.0.5 - Filters and functions for Jinja2 templates, new `template_debug()` function for debugging templates
 - 0.0.4 - Bug fix for DuckDB data source to read relative paths correctly, DuckDB read-only mode, `--version` flag for CLI

@@ -113,6 +113,19 @@ cmd_install() {
 }
 defhelp install 'Install package in editable mode.'
 
+cmd_createschema() {
+    echo "Creating JSON schema..."
+    source .venv/bin/activate; python -c "
+import sys
+from pathlib import Path
+sys.path.insert(0, '.')
+from presskit.config.models import write_json_schema
+write_json_schema(Path('presskit.schema.json'))
+print('Schema written to presskit.schema.json')
+"
+}
+defhelp createschema 'Create JSON schema.'
+
 cmd_test() {
     echo "Running tests..."
     source .venv/bin/activate; pytest tests/ -v

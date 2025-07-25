@@ -49,7 +49,7 @@ class TestAssetHelpers:
             assert "main.css" in file_names
             assert len(files) == 4
 
-    def test_get_asset_files_with_ignore_patterns(self):
+    def test_get_asset_files_with_exclude_patterns(self):
         """Test getting asset files with ignore patterns."""
         with tempfile.TemporaryDirectory() as temp_dir:
             static_dir = Path(temp_dir) / "static"
@@ -176,22 +176,22 @@ class TestAssetConfig:
         config = AssetConfig()
         
         assert config.include_patterns == ["**/*"]
-        assert ".DS_Store" in config.ignore_patterns
-        assert "*.tmp" in config.ignore_patterns
-        assert "*.swp" in config.ignore_patterns
-        assert "Thumbs.db" in config.ignore_patterns
+        assert ".DS_Store" in config.exclude_patterns
+        assert "*.tmp" in config.exclude_patterns
+        assert "*.swp" in config.exclude_patterns
+        assert "Thumbs.db" in config.exclude_patterns
         assert config.clean_destination is False
 
     def test_asset_config_custom(self):
         """Test AssetConfig with custom values."""
         config = AssetConfig(
             include_patterns=["*.css", "*.js"],
-            ignore_patterns=["*.backup"],
+            exclude_patterns=["*.backup"],
             clean_destination=True
         )
         
         assert config.include_patterns == ["*.css", "*.js"]
-        assert config.ignore_patterns == ["*.backup"]
+        assert config.exclude_patterns == ["*.backup"]
         assert config.clean_destination is True
 
 
@@ -363,7 +363,7 @@ class TestAssetIntegration:
             "static_dir": "assets",
             "assets": {
                 "include_patterns": ["*.css", "*.js"],
-                "ignore_patterns": ["*.bak"],
+                "exclude_patterns": ["*.bak"],
                 "clean_destination": True
             }
         }
@@ -372,7 +372,7 @@ class TestAssetIntegration:
         
         assert config.static_dir == Path("assets")
         assert config.assets.include_patterns == ["*.css", "*.js"]
-        assert config.assets.ignore_patterns == ["*.bak"]
+        assert config.assets.exclude_patterns == ["*.bak"]
         assert config.assets.clean_destination is True
 
     def test_minimal_asset_config(self):
@@ -383,4 +383,4 @@ class TestAssetIntegration:
         assert config.static_dir == Path("static")
         assert isinstance(config.assets, AssetConfig)
         assert config.assets.include_patterns == ["**/*"]
-        assert ".DS_Store" in config.assets.ignore_patterns
+        assert ".DS_Store" in config.assets.exclude_patterns

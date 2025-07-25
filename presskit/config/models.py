@@ -112,7 +112,7 @@ class AssetConfig(BaseModel):
     """Configuration for static asset management."""
 
     include_patterns: List[str] = Field(default=["**/*"], description="Glob patterns for files to copy")
-    ignore_patterns: List[str] = Field(
+    exclude_patterns: List[str] = Field(
         default=[".DS_Store", "*.tmp", "*.swp", "Thumbs.db"], description="Patterns to exclude from copying"
     )
     clean_destination: bool = Field(default=False, description="Remove orphaned files from previous builds")
@@ -122,7 +122,7 @@ class AssetConfig(BaseModel):
         """Process environment variables in asset configuration."""
         # Process patterns - they could contain env vars
         self.include_patterns = [EnvironmentLoader.load_env_value(pattern) for pattern in self.include_patterns]
-        self.ignore_patterns = [EnvironmentLoader.load_env_value(pattern) for pattern in self.ignore_patterns]
+        self.exclude_patterns = [EnvironmentLoader.load_env_value(pattern) for pattern in self.exclude_patterns]
         return self
 
 
