@@ -444,32 +444,58 @@ def sources():
 
 
 @app.command()
-@click.argument("file", required=True)
+@click.argument("file", required=False)
 @click.option("--source", multiple=True, help="JSON data source files")
 @click.option("--template", help="Template file to use (default: use file's layout from frontmatter)")
 @click.option("--output", help="Output HTML file path")
 @click.option("--config", help="Path to presskit.json config file (optional)")
 @click.option("--watch", is_flag=True, help="Watch for changes and recompile automatically")
+@click.option("--type", "file_type", type=click.Choice(["md", "html"]), help="File type when reading from stdin")
 def compile(
-    file: str,
+    file: t.Optional[str],
     source: t.Tuple[str, ...],
     template: t.Optional[str] = None,
     output: t.Optional[str] = None,
     config: t.Optional[str] = None,
     watch: bool = False,
+    file_type: t.Optional[str] = None,
 ):
     """Compile a single Markdown or HTML file with Jinja templating.
 
     Supports compiling individual files with custom data sources and templates.
+    If no file is provided or file is '-', reads from stdin.
 
     \b
     presskit compile page.md
     presskit compile page.html --template base.html --output out.html
     presskit compile page.md --source data.json --source users.json
+    presskit compile --type md < input.md
+    echo "# Hello" | presskit compile --type md
     """
     try:
+        # Handle stdin input
+        if file is None or file == "-":
+            if not file_type:
+                print_error("--type option is required when reading from stdin")
+                raise click.Abort()
+            import sys
+
+            stdin_content = sys.stdin.read()
+            if not stdin_content.strip():
+                print_error("No content provided from stdin")
+                raise click.Abort()
+        else:
+            stdin_content = None
+
         success = cmd_compile(
-            file_path=file, sources=list(source), template_override=template, output_path=output, config_file=config, watch=watch
+            file_path=file,
+            sources=list(source),
+            template_override=template,
+            output_path=output,
+            config_file=config,
+            watch=watch,
+            stdin_content=stdin_content,
+            file_type=file_type,
         )
         if not success:
             raise click.Abort()

@@ -107,6 +107,12 @@ cmd_setup() {
 }
 defhelp setup 'Set up Python virtual environment.'
 
+cmd_install() {
+    echo "Installing package..."
+    uv tool install --editable .[duckdb] --upgrade
+}
+defhelp install 'Install package in editable mode.'
+
 cmd_test() {
     echo "Running tests..."
     source .venv/bin/activate; pytest tests/ -v

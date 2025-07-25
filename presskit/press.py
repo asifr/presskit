@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from jinja2.exceptions import TemplateError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from jinja2 import Environment, FileSystemLoader, select_autoescape, pass_context
+import typing as t
 from typing import Dict, List, Optional, Any, TypeVar, Union, Mapping, Sequence
 from presskit.utils import print_error, print_warning, print_success, print_info, print_progress
 from presskit.config.models import (
@@ -1104,7 +1105,7 @@ def extract_front_matter(content: str) -> tuple[Dict[str, Any], str, Dict[str, A
             # Extract queries if they exist in front matter
             if "queries" in front_matter:
                 queries = front_matter.pop("queries")
-            
+
             # Extract sources if they exist in front matter
             if "sources" in front_matter:
                 sources = front_matter.pop("sources")
@@ -2136,37 +2137,59 @@ def cmd_sources() -> bool:
 
 
 def cmd_compile(
-    file_path: str,
-    sources: List[str],
-    template_override: Optional[str] = None,
-    output_path: Optional[str] = None,
-    config_file: Optional[str] = None,
+    file_path: t.Optional[str],
+    sources: t.List[str],
+    template_override: t.Optional[str] = None,
+    output_path: t.Optional[str] = None,
+    config_file: t.Optional[str] = None,
     watch: bool = False,
+    stdin_content: t.Optional[str] = None,
+    file_type: t.Optional[str] = None,
 ) -> bool:
     """
     Compile a single Markdown or HTML file with Jinja templating.
 
     Args:
-        file_path: Path to the file to compile
+        file_path: Path to the file to compile (None or '-' for stdin)
         sources: List of JSON data source files
         template_override: Optional template file to use instead of frontmatter layout
         output_path: Optional output path for the compiled HTML
         config_file: Optional config file path
         watch: Whether to watch for file changes and recompile automatically
+        stdin_content: Content from stdin when file_path is None or '-'
+        file_type: File type ('md' or 'html') when using stdin
 
     Returns:
         True if successful, False otherwise
     """
+
     def do_compile():
         """Perform the actual compilation."""
         try:
-            print(f"Compiling: {file_path}")
+            # Handle stdin input
+            if stdin_content is not None:
+                print("Compiling from stdin")
+                input_file = None
 
-            # Convert file path to Path object
-            input_file = Path(file_path)
-            if not input_file.exists():
-                print_error(f"File not found: {input_file}")
-                return False
+                # Determine file extension from file_type
+                if file_type == "md":
+                    file_extension = ".md"
+                elif file_type == "html":
+                    file_extension = ".html"
+                else:
+                    print_error(f"Unsupported file type: {file_type}")
+                    return False
+            else:
+                print(f"Compiling: {file_path}")
+
+                # Convert file path to Path object
+                input_file = Path(file_path)
+                if not input_file.exists():
+                    print_error(f"File not found: {input_file}")
+                    return False
+
+                # Determine file type and process accordingly
+                file_extension = input_file.suffix.lower()
 
             # Load configuration if available
             config = None
@@ -2204,13 +2227,17 @@ def cmd_compile(
                     print_error(f"Invalid JSON in {source_file}: {e}")
                     return False
 
-            # Determine file type and process accordingly
-            file_extension = input_file.suffix.lower()
-
+            # Process based on file type
             if file_extension == ".md":
-                return compile_markdown_file(input_file, json_data, template_override, output_path, config)
+                if stdin_content is not None:
+                    return compile_markdown_content(stdin_content, json_data, template_override, output_path, config)
+                else:
+                    return compile_markdown_file(input_file, json_data, template_override, output_path, config)
             elif file_extension == ".html":
-                return compile_html_file(input_file, json_data, template_override, output_path, config)
+                if stdin_content is not None:
+                    return compile_html_content(stdin_content, json_data, template_override, output_path, config)
+                else:
+                    return compile_html_file(input_file, json_data, template_override, output_path, config)
             else:
                 print_error(f"Unsupported file type: {file_extension}")
                 print_info("Supported file types: .md, .html")
@@ -2219,6 +2246,11 @@ def cmd_compile(
         except Exception as e:
             print_error(f"Error compiling file: {e}")
             return False
+
+    # Watch mode is not supported with stdin input
+    if watch and stdin_content is not None:
+        print_error("Watch mode is not supported when reading from stdin")
+        return False
 
     # If watch mode is enabled
     if watch:
@@ -2259,19 +2291,20 @@ def cmd_compile(
 
         try:
             from watchfiles import watch as watch_files
+
             for changes in watch_files(*watch_paths):
                 # Filter changes to only relevant files
                 relevant_changes = []
                 input_file_resolved = input_file.resolve()
-                
+
                 for change in changes:
                     change_path = Path(change[1]).resolve()
-                    
+
                     # Check if it's the target file, a source file, or config file
                     is_target_file = change_path == input_file_resolved
                     is_source_file = any(Path(source).resolve() == change_path for source in sources)
                     is_config_file = change_path.name == "presskit.json"
-                    
+
                     if is_target_file or is_source_file or is_config_file:
                         relevant_changes.append(change)
 
@@ -2415,6 +2448,127 @@ def compile_markdown_file(
 
     except Exception as e:
         print_error(f"Error compiling markdown file: {e}")
+        return False
+
+
+def compile_markdown_content(
+    content: str,
+    json_data: t.Dict[str, t.Any],
+    template_override: t.Optional[str],
+    output_path: t.Optional[str],
+    config: t.Optional[SiteConfig],
+) -> bool:
+    """
+    Compile Markdown content from string with Jinja templating.
+
+    Args:
+        content: Markdown content string
+        json_data: Loaded JSON data sources
+        template_override: Optional template override
+        output_path: Optional output path
+        config: Optional site configuration
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Extract front matter and content
+        front_matter, md_content, md_queries, md_sources = extract_front_matter(content)
+
+        # Create minimal config if none provided
+        if not config:
+            config = create_minimal_config(Path.cwd())
+
+        # Load frontmatter sources if any (relative to current directory)
+        frontmatter_sources = {}
+        if md_sources:
+            frontmatter_sources = load_frontmatter_sources(md_sources, Path.cwd())
+
+        # Combine command-line sources with frontmatter sources
+        combined_sources = {**json_data, **frontmatter_sources}
+
+        # Build template context
+        site_ctx = build_site_context(config)
+        build_ctx = build_build_context()
+
+        # Create page context (use stdin as filename)
+        page_ctx = PageContext(
+            filename="stdin",
+            filepath="stdin",
+            path="stdin",
+            content=None,  # Will be set after processing
+            layout=template_override or front_matter.get("layout", config.default_template),
+            title=front_matter.get("title"),
+            description=front_matter.get("description"),
+        )
+
+        # Create data context with combined sources
+        data_ctx = DataContext(
+            queries={},
+            sources=combined_sources,
+            page_queries={},
+        )
+
+        # Create complete template context
+        template_context = TemplateContext(
+            site=site_ctx,
+            build=build_ctx,
+            page=page_ctx,
+            data=data_ctx,
+            extras=front_matter,
+        )
+
+        # Process markdown content
+        html_content = process_markdown(
+            md_content, template_context.to_template_vars(), config.content_dir, config, None
+        )
+
+        # Update page context with processed content
+        template_context.page.content = html_content
+
+        # Process template if specified
+        if page_ctx.layout:
+            # Look for template in templates directory or current directory
+            template_paths = []
+            if config.templates_dir.exists():
+                template_paths.append(config.templates_dir)
+            template_paths.append(Path.cwd())
+
+            template_found = False
+            for template_dir in template_paths:
+                template_file = template_dir / f"{page_ctx.layout}.html"
+                if template_file.exists():
+                    final_html = process_template(
+                        page_ctx.layout, template_context.to_template_vars(), template_dir, config
+                    )
+                    template_found = True
+                    break
+
+            if not template_found and page_ctx.layout != "none":
+                print_warning(f"Template '{page_ctx.layout}.html' not found, using content only")
+
+            if not template_found:
+                final_html = html_content
+        else:
+            final_html = html_content
+
+        # Output handling
+        if output_path:
+            output_file = Path(output_path)
+            # Ensure the directory exists
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            # Write output file
+            with open(output_file, "w") as f:
+                f.write(final_html)
+            print_success(f"Compiled to: {output_file}")
+        else:
+            # Output to stdout
+            print(final_html)
+
+        return True
+
+    except Exception as e:
+        print_error(f"Error compiling markdown content: {e}")
         return False
 
 
@@ -2568,10 +2722,126 @@ def compile_html_file(
         return False
 
 
-def load_frontmatter_sources(
-    sources_config: Dict[str, Any], 
-    base_dir: Path
-) -> Dict[str, Any]:
+def compile_html_content(
+    content: str,
+    json_data: t.Dict[str, t.Any],
+    template_override: t.Optional[str],
+    output_path: t.Optional[str],
+    config: t.Optional[SiteConfig],
+) -> bool:
+    """
+    Compile HTML content from string with Jinja templating.
+
+    Args:
+        content: HTML content string
+        json_data: Loaded JSON data sources
+        template_override: Optional template override
+        output_path: Optional output path
+        config: Optional site configuration
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Extract front matter and content
+        front_matter, html_content, html_queries, html_sources = extract_front_matter(content)
+
+        # Create minimal config if none provided
+        if not config:
+            config = create_minimal_config(Path.cwd())
+
+        # Load frontmatter sources if any (relative to current directory)
+        frontmatter_sources = {}
+        if html_sources:
+            frontmatter_sources = load_frontmatter_sources(html_sources, Path.cwd())
+
+        # Combine command-line sources with frontmatter sources
+        combined_sources = {**json_data, **frontmatter_sources}
+
+        # Build template context
+        site_ctx = build_site_context(config)
+        build_ctx = build_build_context()
+
+        # Create page context (use stdin as filename)
+        page_ctx = PageContext(
+            filename="stdin",
+            filepath="stdin",
+            path="stdin",
+            content=None,  # Will be set after processing
+            layout=template_override or front_matter.get("layout", "none"),
+            title=front_matter.get("title"),
+            description=front_matter.get("description"),
+        )
+
+        # Process HTML file's queries if any (similar to markdown)
+        page_query_results = {}
+        if html_queries:
+            # Build temporary context for processing queries
+            temp_context = TemplateContext(
+                site=site_ctx,
+                build=build_ctx,
+                page=page_ctx,
+                data=DataContext(queries={}, sources=combined_sources, page_queries={}),
+                extras=front_matter,
+            )
+            # Use async query processor for HTML queries
+            processor = QueryProcessor()
+            page_query_results = asyncio.run(
+                processor.process_markdown_queries(html_queries, temp_context.to_template_vars(), config)
+            )
+
+        # Create data context with combined sources and page queries
+        data_ctx = DataContext(
+            queries={},
+            sources=combined_sources,
+            page_queries=page_query_results,
+        )
+
+        # Create complete template context with frontmatter extras
+        template_context = TemplateContext(
+            site=site_ctx,
+            build=build_ctx,
+            page=page_ctx,
+            data=data_ctx,
+            extras=front_matter,
+        )
+
+        # Process HTML file as Jinja template
+        template_vars = template_context.to_template_vars()
+
+        # Process the HTML content with Jinja
+        env = Environment(
+            loader=FileSystemLoader(Path.cwd()),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
+        env.filters.update(JINJA_FILTERS)
+        env.globals.update(JINJA_GLOBALS)
+
+        # Process as template
+        template = env.from_string(html_content)
+        final_html = template.render(template_vars)
+
+        # Output handling
+        if output_path:
+            output_file = Path(output_path)
+            # Ensure the directory exists
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            # Write output file
+            with open(output_file, "w") as f:
+                f.write(final_html)
+            print_success(f"Compiled to: {output_file}")
+        else:
+            # Output to stdout
+            print(final_html)
+
+        return True
+
+    except Exception as e:
+        print_error(f"Error compiling HTML content: {e}")
+        return False
+
+
+def load_frontmatter_sources(sources_config: Dict[str, Any], base_dir: Path) -> Dict[str, Any]:
     """
     Load data sources defined in frontmatter.
 
@@ -2583,17 +2853,17 @@ def load_frontmatter_sources(
         Dictionary with loaded source data
     """
     loaded_sources = {}
-    
+
     for source_name, source_config in sources_config.items():
         try:
             if isinstance(source_config, dict):
                 source_type = source_config.get("type", "json")
                 source_path = source_config.get("path")
-                
+
                 if not source_path:
                     print_warning(f"No path specified for source '{source_name}', skipping")
                     continue
-                
+
                 # Resolve path relative to base directory or working directory
                 path_obj = Path(source_path)
                 if not path_obj.is_absolute():
@@ -2606,11 +2876,11 @@ def load_frontmatter_sources(
                             file_path = cwd_path
                 else:
                     file_path = path_obj
-                
+
                 if not file_path.exists():
                     print_warning(f"Source file not found: {file_path}")
                     continue
-                
+
                 # Currently only support JSON sources in frontmatter
                 if source_type == "json":
                     with open(file_path, "r") as f:
@@ -2621,12 +2891,12 @@ def load_frontmatter_sources(
                     print_warning(f"Unsupported source type '{source_type}' for source '{source_name}'")
             else:
                 print_warning(f"Invalid source configuration for '{source_name}', expected dict")
-                
+
         except json.JSONDecodeError as e:
             print_error(f"Invalid JSON in source '{source_name}': {e}")
         except Exception as e:
             print_error(f"Error loading source '{source_name}': {e}")
-    
+
     return loaded_sources
 
 
